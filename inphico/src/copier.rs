@@ -1,23 +1,41 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 use base64::{engine::general_purpose, Engine as _};
 
 pub fn copy_it() -> io::Result<()> {
+    fs::create_dir_all("folder")?;
+
     let original = File::open("output.txt")?;
     let reader = BufReader::new(original);
 
     for line in reader.lines() {
         let source_filename = line?;
         
-        let mut source_file = File::open(&source_filename)?;
+        let path = Path::new(&source_filename);
+        if !path.is_file() {
+            continue; 
+        }
         
-        let destination_path = format!("folder/{}", obfuscate(&source_filename));
-        
-        let mut destination_file = File::create(destination_path)?;
+        if let Some(os_filename) = path.file_name() {
+            if let Some(filename_str) = os_filename.to_str() {
+                
+                let mut source_file = File::open(&source_filename)?;
+                
+                let mut obfuscated_name = obfuscate(filename_str);
+                
+                if obfuscated_name.len() > 200 {
+                    obfuscated_name.truncate(200);
+                }
+                
+                let destination_path = format!("folder/{}", obfuscated_name);
+                let mut destination_file = File::create(destination_path)?;
 
-        io::copy(&mut source_file, &mut destination_file)?;
+                io::copy(&mut source_file, &mut destination_file)?;
+            }
+        }
     }
-	println!("Done copying files");
+
     Ok(())
 }
 

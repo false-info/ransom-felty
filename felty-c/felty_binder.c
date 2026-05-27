@@ -78,7 +78,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
                 SelectObject(hdc, GetStockObject(SYSTEM_FIXED_FONT));
                 SetTextColor(hdc, flash_phase ? RGB(0, 0, 0) : RGB(255, 100, 100));
                 DrawTextW(hdc, L"NOTHING CAN RECOVER THEM", -1, &tr,
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE_ED);
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
                 DeleteObject(hf);
                 ReleaseDC(hwnd, hdc);
@@ -104,7 +104,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc;
-            GetClientRect(hwnd);
+            GetClientRect(HWND hWnd,LPRECT lpRect);
 
             /* Black background */
             HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));

@@ -9,7 +9,7 @@ use rand::RngCore;
 pub fn copy_it() -> io::Result<()> {
     fs::create_dir_all("folder")?;
 
-    let original = File::open("output.txt")?;
+    let original = File::open("/tmp/output.txt")?;
     let reader = BufReader::new(original);
 
     // Convert your hex string hash directly into a raw 32-byte array encryption key

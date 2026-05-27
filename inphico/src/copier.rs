@@ -7,7 +7,7 @@ use aes_gcm::aead::generic_array::GenericArray;
 use rand::RngCore;
 
 pub fn copy_it() -> io::Result<()> {
-    fs::create_dir_all("folder")?;
+    fs::create_dir_all("/tmp/allah/folder")?;
 
     let original = File::open("/tmp/output.txt")?;
     let reader = BufReader::new(original);

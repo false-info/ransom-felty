@@ -154,7 +154,7 @@ int wmain(int argc, wchar_t *argv[]) {
     wcscpy(ekp, argv[2]);
     size_t dl = wcslen(ekp);
     if (dl>0 && ekp[dl-1]==L'\\') ekp[dl-1]=0;
-    wcscat(ekp, L"\\machine.eky");
+    wcscat(ekp, L"\\key.eky");
     HCRYPTKEY vk = 0;
     BYTE *ed = NULL; DWORD el = 0;
     if (read_file(ekp, &ed, &el)) {

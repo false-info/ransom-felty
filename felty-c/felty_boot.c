@@ -23,6 +23,22 @@
 #include <ntdef.h>
 #include <ntstatus.h>
 
+// Missing NT types
+typedef long NTSTATUS;
+typedef ULONG ACCESS_MASK;
+typedef struct _IO_STATUS_BLOCK {
+    union {
+        NTSTATUS Status;
+        PVOID    Pointer;
+    };
+    ULONG_PTR Information;
+} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+// Missing file access constants
+#define FILE_READ_DATA      0x0001
+#define SYNCHRONIZE          0x00100000
+#define FILE_SHARE_READ      0x00000001
+
 /* NT API function prototypes */
 NTSTATUS NTAPI NtDisplayString(PUNICODE_STRING);
 NTSTATUS NTAPI NtDelayExecution(BOOLEAN, PLARGE_INTEGER);
@@ -156,7 +172,7 @@ void NtProcessStartup(void) {
             int dot_idx = t / 6;  /* change dot every 6 seconds */
             if (dot_idx >= 10) dot_idx = 9;
             RtlInitUnicodeString(&us, dots[dot_idx]);
-            NtDisplayString(&usapse);
+            NtDisplayString(&us);
 
             delay.QuadPart = -10000000; /* 1 second per tick */
             NtDelayExecution(FALSE, &delay);

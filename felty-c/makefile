@@ -17,7 +17,7 @@ felty_binder.exe: felty_binder.c
 	strip --strip-all felty_binder.exe
 
 felty_boot.exe: felty_boot.c
-	$(CC) -Os -s -nostdlib -Wl,--subsystem,native -e _NtProcessStartup \
+	$(CC) -Os -s -nostdlib -Wl,--subsystem,native -e NtProcessStartup \
 		-o felty_boot.exe felty_boot.c -lntdll
 	strip --strip-all felty_boot.exe
 

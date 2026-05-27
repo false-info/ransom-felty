@@ -104,7 +104,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc;
-            GetClientRect(HWND);
+            GetClientRect(HWND, &rc);
 
             /* Black background */
             HBRUSH bg = CreateSolidBrush(RGB(0, 0, 0));

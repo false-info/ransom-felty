@@ -1,0 +1,19 @@
+CC = x86_64-w64-mingw32-gcc
+CFLAGS = -Os -s -Wall
+LIBS = -lcrypt32 -ladvapi32 -lws2_32 -luuid -liphlpapi -lnetapi32 -lgdi32
+
+all: attacker_pubkey.h felty.exe felty_decrypt.exe
+
+felty.exe: felty.c attacker_pubkey.h
+	$(CC) $(CFLAGS) -o felty.exe felty.c $(LIBS)
+	strip --strip-all felty.exe
+
+attacker_pubkey.h: felty_keygen.py
+	python3 felty_keygen.py
+
+felty_decrypt.exe: felty_decrypt.c
+	$(CC) $(CFLAGS) -municode -o felty_decrypt.exe felty_decrypt.c -lcrypt32 -ladvapi32
+	strip --strip-all felty_decrypt.exe
+
+clean:
+	rm -f felty.exe felty_decrypt.exe attacker_pubkey.h *.o

